@@ -22,9 +22,10 @@ pipeline de deploy automatizados, em três ambientes (dev/test/prod), na AWS.
 | 7 | Acesso ao host: **SSM Session Manager** | SSH + chave + porta 22 | Elimina porta exposta; acesso auditado via IAM, sem gestão de chaves distribuídas |
 | 8 | Secrets: **SSM Parameter Store** | `.env` no host / segredos no Git | Segredos nunca residem no host nem no controle de versão; least privilege via IAM |
 | 9 | Banco em prod: **toggle RDS** (`use_rds`) | sempre container / sempre RDS | Ambientes de baixo custo usam container; produção usa serviço gerenciado (backup, Multi-AZ) via flag de configuração — 12-factor |
-| 10 | State do Terraform: **S3 + DynamoDB lock** | state local | Colaboração segura, lock contra execução concorrente, durabilidade |
+| 10 | State do Terraform: **S3 com lock nativo** (`use_lockfile`) | state local, lock via DynamoDB | Colaboração segura, lock contra execução concorrente sem depender de tabela separada; método atual recomendado pelo Terraform (DynamoDB lock foi depreciado) |
+| 11 | Coleta de logs: **Grafana Alloy** | Promtail | Promtail atingiu EOL em 03/2026 (sem mais suporte oficial); Alloy é o coletor atual recomendado pelo Grafana Labs |
 
-## Caminho de evolução (não implementado no escopo da entrega)
+## Caminho de evolução (fora do escopo desta entrega)
 
 Documentado e defendido, não construído — decisão consciente de escopo:
 
@@ -34,12 +35,12 @@ Postgres em container    →  RDS Multi-AZ (toggle já implementado no código)
 nginx em HTTP             →  ALB + ACM (TLS)
 ```
 
-## Critérios de aceite do desafio × entrega
+## Requisitos avaliados × status da entrega
 
-| Critério do enunciado | Status |
+| Requisito | Status |
 |---|---|
-| Automação de infraestrutura (IaaS) | Terraform — provisionamento completo |
-| Automação de configuração (IaaC) | Ansible — roles idempotentes |
-| Pipeline de deploy | GitHub Actions — build, test, scan, deploy por branch |
-| Monitoramento e métricas | Prometheus + Grafana + Loki + Alertmanager, métricas RED da API |
-| Desenvolvimento da API | Node/Express + Postgres, testado (7 testes automatizados) |
+| Automação de infraestrutura (IaaS) | ✅ Terraform — provisionamento completo, validado end-to-end na AWS |
+| Automação de configuração (IaaC) | 🔜 Ansible — em desenvolvimento |
+| Pipeline de deploy | 🔜 GitHub Actions — em desenvolvimento |
+| Monitoramento e métricas | ✅ Prometheus + Grafana + Loki + Alloy + Alertmanager, métricas RED da API, dashboard com painel de SLO |
+| Desenvolvimento da API | ✅ Node/Express + Postgres, testado (7 testes automatizados) |
