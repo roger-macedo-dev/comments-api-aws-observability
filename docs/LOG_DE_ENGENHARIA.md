@@ -510,4 +510,129 @@ Confirmado: logs de todos os 9 containers indexados e rotulados corretamente.
 - [x] Bug de robustez real encontrado e corrigido (pool sem handler de erro)
 - [x] docker-compose.yml com 10 serviços, todos saudáveis
 
-Próxima fase: Terraform — provisionamento da infraestrutura AWS (VPC, EC2, SG, IAM, SSM, state remoto) — Fase 4.
+## Fase 4 — Terraform (provisionamento AWS)
+
+### 4.1 — Usuário IAM dedicado
+
+Criado `terraform-comments-api` (sem acesso ao console web, só CLI/API), separado do
+usuário pessoal da conta AWS — se a credencial vazar, o dano fica limitado a este escopo.
+
+**Trade-off consciente de permissão:** `PowerUserAccess` + `IAMFullAccess` (não uma policy
+custom mínima). Justificativa: conta pessoal dedicada a este projeto, `IAMFullAccess` é
+necessário porque o Terraform **cria roles IAM** (para o EC2 usar SSM). Documentado como
+decisão pragmática — em ambiente corporativo real, a evolução seria uma policy JSON
+escopada às ações exatas usadas.
+
+Credenciais configuradas via `aws configure` na VM (nunca coladas em chat/log — ficam em
+`~/.aws/credentials`, fora do repo). Validado com `aws sts get-caller-identity`.
+
+### 4.2 — Bootstrap do backend remoto (S3 + lock nativo)
+
+Problema clássico: o bucket S3 do state precisa existir **antes** de qualquer `terraform
+init` usá-lo como backend — referência circular se tentado via Terraform. Resolvido com
+bootstrap único via AWS CLI (fora do Terraform principal):
+
+```bash
+aws s3api create-bucket --bucket comments-api-tfstate-<account-id> --region us-east-2 ...
+aws s3api put-bucket-versioning ...    # histórico de versões do state
+aws s3api put-bucket-encryption ...    # AES256 em repouso
+```
+
+Nome do bucket inclui o **Account ID** — nomes de bucket S3 são globais únicos entre todas
+as contas AWS do mundo.
+
+**Decisão corrigida em tempo real:** o plano original prevejia lock via tabela DynamoDB
+(`dynamodb_table` no backend), mas o Terraform 1.15.8 instalado já **deprecia** esse
+parâmetro — substituído por `use_lockfile = true`, lock nativo via escrita condicional no
+próprio S3, sem precisar de tabela separada. Adotamos o método atual, removemos a tabela
+DynamoDB criada por engano no primeiro bootstrap (`aws dynamodb delete-table`) — versão de
+ferramenta mais nova que a documentação/plano original previa; resolvido ajustando ao
+estado real da ferramenta, não forçando o método antigo.
+
+### 4.3 — Divergência resolvida: subnet única em vez de pública+privada
+
+O spec original desenhava nginx em subnet pública e API+Postgres em subnet privada — mas
+isso pressupõe **hosts separados**. A Fase 2 já havia consolidado tudo num único
+`docker-compose.yml` (decisão ADR #2, "1 EC2 + Docker Compose") — não é possível colocar
+containers do mesmo compose em subnets diferentes, subnet é propriedade da instância, não
+do container.
+
+**Resolução:** uma única subnet pública. A segregação real de fato já vem de outro lugar —
+o próprio compose (só `nginx` publica porta pro host; `api`/`postgres`/observabilidade só
+existem na rede interna `backend` do Docker) e do Security Group (só porta 80 liberada).
+Subnet privada seria redundante com isolamento que já existe. Bônus: elimina a necessidade
+de **NAT Gateway** (~$0,045/hora + tráfego, item clássico de fatura AWS surpresa) — subnet
+pública com Internet Gateway já dá saída sem esse custo contínuo.
+
+Consequência: variáveis `private_subnet_cidr` e `my_ip` (pensada para regra de SSH de
+fallback) removidas do `variables.tf` antes mesmo de serem usadas — YAGNI, sem SSH não
+existe cenário que precise delas.
+
+### 4.4 — Arquivos Terraform
+
+| Arquivo | Recursos |
+|---|---|
+| `versions.tf` | provider AWS + random, backend S3 com lock nativo |
+| `variables.tf` | `environment` (sem default — força escolha explícita), `instance_type`, CIDRs, `use_rds` |
+| `network.tf` | VPC, subnet pública, Internet Gateway, route table |
+| `security.tf` | 1 Security Group — ingress só porta 80, egress liberado total |
+| `iam.tf` | role da instância (`AmazonSSMManagedInstanceCore` + policy custom de leitura do Parameter Store escopada por `/comments-api/${environment}/*`), instance profile |
+| `secrets.tf` | `random_password` (senha DB + Grafana) + `aws_ssm_parameter` (`SecureString` para senhas, `String` para valores não sensíveis) |
+| `ec2.tf` | `data "aws_ami"` (Amazon Linux 2023 mais recente, dinâmico) + `aws_instance` — **sem `key_name`**, nenhuma chave SSH associada |
+| `outputs.tf` | `instance_id`, `public_ip`, `environment` — contrato para Ansible/pipeline lerem depois |
+| `envs/dev.tfvars` | valores do ambiente dev |
+
+Pontos de design que reforçam a decisão #7 (SSM, sem SSH):
+- Nenhuma regra de ingress para porta 22 em lugar nenhum do código.
+- `aws_instance.app` não declara `key_name` — não existe, fisicamente, uma chave SSH
+  associada a essa instância.
+- IAM policy de leitura do Parameter Store escopada por ambiente — instância de dev
+  comprometida não alcança segredos de prod, mesmo o usuário Terraform tendo permissão ampla.
+
+### 4.5 — Correções durante o `terraform plan`/`apply`
+
+**Arquivo esquecido:** `secrets.tf` foi instruído mas não criado na primeira passada — o
+`terraform plan` mostrou só 11 recursos em vez dos 17 esperados. Detectado comparando a
+contagem esperada com o plano real, confirmado com `ls *.tf`, corrigido recriando o arquivo
+antes de aplicar. **Lição:** sempre conferir a contagem de recursos do plano contra o que
+se espera, não só rodar `apply` cegamente.
+
+**AMI exige disco maior:** `terraform apply` falhou na criação da instância —
+`InvalidBlockDeviceMapping: Volume of size 20GB is smaller than snapshot ..., expect size
+>= 30GB`. A AMI mais recente do Amazon Linux 2023 mudou o tamanho do snapshot-base desde
+que o spec original previu 20GB (mesmo valor usado no lab anterior, mas para volume raiz
+mínimo, não para builds locais). Corrigido para `volume_size = 30` — ainda dentro do free
+tier de EBS (30GB grátis/mês). Terraform aplicou de forma incremental: como os outros 16
+recursos já existiam no state, só a instância entrou no segundo `apply`.
+
+### 4.6 — Validação end-to-end
+
+```bash
+terraform apply -var-file=envs/dev.tfvars   # 17 recursos criados
+aws ssm describe-instance-information ...    # PingStatus: Online
+aws ssm start-session --target i-0af... ...  # shell dentro da EC2, sem SSH
+```
+
+Faltava o `session-manager-plugin` na VM de controle (binário auxiliar que a AWS CLI invoca
+para o streaming da sessão — não tem pacote `dnf` oficial, só RPM direto da Amazon, mesma
+situação da AWS CLI v2). Instalado, sessão aberta com sucesso: `whoami` → `ssm-user`,
+`/etc/os-release` confirma Amazon Linux 2023 real, na nuvem, acessado sem chave e sem porta
+22 aberta em lugar nenhum.
+
+## Fase 4 — CONCLUÍDA ✅
+
+- [x] Usuário IAM dedicado, credenciais fora do repo
+- [x] Backend remoto S3 com lock nativo, versionamento e criptografia
+- [x] VPC + subnet pública + IGW + route table
+- [x] Security Group — só porta 80, sem SSH
+- [x] IAM role da instância — SSM + leitura de Parameter Store escopada por ambiente
+- [x] Segredos gerados pelo Terraform, armazenados como `SecureString` no SSM
+- [x] EC2 provisionada — Amazon Linux 2023, sem key pair
+- [x] Acesso validado via SSM Session Manager, zero SSH
+
+Próxima fase: Ansible — configuração da instância (Docker, deploy da stack via compose,
+leitura de segredos do SSM) — Fase 5.
+
+**Lembrete de custo:** instância `dev` ficará rodando até a Fase 5 estar pronta para
+configurá-la; ao final da sessão, `terraform destroy -var-file=envs/dev.tfvars` se não for
+usar nas próximas horas.
