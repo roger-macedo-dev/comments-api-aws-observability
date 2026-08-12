@@ -290,4 +290,91 @@ mais seguro pra arquivos estruturados curtos.
 - [x] Validação manual (curl) batendo com o enunciado
 - [x] Testes automatizados (7/7 passando)
 
-Próxima fase: Dockerfile + docker-compose (empacotar a stack toda — API, Postgres, nginx, observabilidade) — Fase 2.
+## Fase 2 — Dockerfile + docker-compose
+
+### 2.1 — Publicação do repositório no GitHub
+
+Repo criado como `comments-api-aws-observability` (público) — nome descreve stack e
+arquitetura, sem referência à origem do desafio (portfólio deve comunicar tecnologia,
+não contexto de onde surgiu). Autenticação via chave SSH dedicada (`~/.ssh/id_ed25519_github`),
+não a chave pessoal do lab — isola credenciais por finalidade.
+
+```bash
+ssh-keygen -t ed25519 -C "<email>" -f ~/.ssh/id_ed25519_github -N ""
+# ~/.ssh/config: Host github.com → IdentityFile específico
+git remote add origin git@github.com:<user>/comments-api-aws-observability.git
+git push -u origin main
+```
+
+Documentação também organizada em três papéis distintos, sem duplicar conteúdo:
+- **spec de design** (`docs/2026-08-12-comments-api-design.md`) — arquitetura completa, ADRs detalhados
+- **`docs/DECISOES.md`** — resumo executivo (tabela), leitura rápida pra quem avalia
+- **`docs/LOG_DE_ENGENHARIA.md`** (este arquivo) — rastro de execução, comando a comando
+
+### 2.2 — Dockerfile multi-stage
+
+```dockerfile
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+COPY src/ ./src/
+
+FROM node:20-alpine
+WORKDIR /app
+RUN addgroup -S app && adduser -S app -G app
+COPY --from=build --chown=app:app /app/node_modules ./node_modules
+COPY --from=build --chown=app:app /app/src ./src
+COPY --chown=app:app package.json ./
+USER app
+ENV NODE_ENV=production
+EXPOSE 5000
+HEALTHCHECK --interval=15s --timeout=3s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:5000/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+CMD ["node", "src/server.js"]
+```
+
+- **Multi-stage**: stage final não carrega ferramentas de build, só `node_modules` + `src` já prontos. Imagem final: **203MB total / 50.5MB de conteúdo próprio** (resto é a base `node:20-alpine`).
+- `npm ci --omit=dev` — build reproduzível via `package-lock.json`, sem devDependencies em produção.
+- **Non-root** (`USER app`) — princípio de segurança do spec: comprometer a API não dá root no container.
+- `HEALTHCHECK` via `node -e` (não `curl`/`wget`) — imagem alpine minimal não tem esses binários; evita instalar pacote extra só pro healthcheck.
+- `.dockerignore` — replica o `.gitignore` pro contexto de build (`node_modules`, `.env`, `tests`, `.git`).
+
+**Validado:** build limpo em ~20s, container isolado testado com `--add-host=host.docker.internal:host-gateway`
+(mesma técnica documentada no lab de observabilidade anterior — container precisa desse hostname especial
+pra alcançar serviço publicado no host; `localhost` dentro do container aponta pro próprio container).
+
+### 2.3 — docker-compose.yml (stack completa)
+
+Serviços: `postgres`, `api`, `migrate` (job único, `restart: "no"`), `nginx` (único componente
+com porta publicada no host — `api` e `postgres` só na rede interna `backend`).
+
+Pontos de design:
+- **Rede nomeada do compose** — containers se resolvem pelo **nome do serviço** (`api`, `postgres`)
+  via DNS interno do Docker. Não precisa mais de `host.docker.internal` aqui — essa técnica é só
+  pra container↔host; dentro do mesmo compose é container↔container.
+- `depends_on: condition: service_healthy` — API só sobe depois do Postgres responder `pg_isready`,
+  não só "container criado". Evita corrida de inicialização.
+- Serviço `migrate` separado da API — roda a migration como tarefa pontual (sobe, executa, morre),
+  não como processo de vida longa.
+- `.env` do compose separado do `.env` da API — variáveis de infraestrutura (usuário/senha do banco,
+  nome da imagem) versus variáveis da aplicação; ambos seguem o padrão `.env` real + `.env.example`
+  documentado + `.gitignore`.
+
+nginx como reverse proxy (`proxy_pass http://api:5000` — de novo, nome do serviço, não IP),
+repassando headers reais (`X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto`) — sem isso a API
+veria toda requisição como vinda do próprio nginx.
+
+**Validado:** `docker compose up -d` — todos os 4 serviços saudáveis, fluxo completo do enunciado
+testado **através do nginx** (porta 80, não mais direto na API): `POST /api/comment/new` → `201`,
+`GET /api/comment/list/1` → lista persistida, `GET /health` → `200` confirmando nginx→API→Postgres.
+
+## Fase 2 — CONCLUÍDA ✅
+
+- [x] Dockerfile multi-stage, non-root, imagem enxuta (203MB)
+- [x] docker-compose.yml — API + Postgres + nginx + migration job
+- [x] Rede interna do Docker, só nginx exposto (alinhado ao spec de segurança)
+- [x] Validado ponta a ponta via porta 80 (nginx)
+- [x] Repositório publicado no GitHub como portfólio
+
+Próxima fase: configs de observabilidade (Prometheus, Grafana provisionado, Loki/Promtail, Alertmanager) — Fase 3.
