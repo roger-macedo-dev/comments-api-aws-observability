@@ -636,3 +636,41 @@ leitura de segredos do SSM) — Fase 5.
 **Lembrete de custo:** instância `dev` ficará rodando até a Fase 5 estar pronta para
 configurá-la; ao final da sessão, `terraform destroy -var-file=envs/dev.tfvars` se não for
 usar nas próximas horas.
+
+## Correção pós-Fase 4 — migração de Promtail para Grafana Alloy
+
+Ao revisar a stack antes de seguir para a Fase 5, verificação de atualidade das
+ferramentas (pesquisa web) confirmou: **Promtail atingiu End-Of-Life em 2 de março de
+2026** — anúncio oficial do Grafana Labs, entrou em LTS em fevereiro/2025, agora sem
+suporte comercial nem atualizações futuras. Substituto oficial: **Grafana Alloy**
+(coletor baseado em OpenTelemetry Collector, recebe toda feature nova daqui em diante).
+Restante da stack seguia atual (Prometheus v2.55.1, Grafana v11.3.1, Loki v3.2.1,
+Alertmanager v0.27.0 — todos com suporte ativo).
+
+**Por que corrigir antes de seguir:** usar uma ferramenta sem suporte numa solução que
+será defendida como "atual" é um risco de defesa real, não só estética — resposta fraca
+para "por que Promtail?" numa entrevista técnica.
+
+**Migração:**
+- `observability/alloy/config.alloy` — configuração em linguagem **River** (declarativa,
+  diferente do YAML do Promtail): `discovery.docker` descobre containers via socket Docker
+  → `discovery.relabel` extrai nome do container como label (mesma lógica de antes) →
+  `loki.source.docker` lê logs → `loki.write` empurra para o Loki. Resultado funcional
+  idêntico ao Promtail.
+- `docker-compose.yml`: serviço `promtail` substituído por `alloy` (imagem
+  `grafana/alloy:v1.18.1`, versão estável mais recente confirmada via GitHub API). Sem
+  porta publicada — API de management do Alloy (12345) fica só na rede interna, mesma
+  política de segurança da stack inteira.
+- `observability/promtail/` removido do repositório — configuração obsoleta, sem uso.
+
+**Validado:**
+```bash
+docker exec compose-nginx-1 wget -qO- http://loki:3100/loki/api/v1/label/container/values
+```
+Loki recebendo logs de todos os containers ativos via Alloy, mesmo resultado da validação
+original da Fase 3 (imagem do Alloy não tem `wget`/`curl` — teste feito a partir do
+container nginx, que tem por ser Alpine).
+
+**Lição:** parte da defesa de uma solução "atual" é verificar isso de fato, não assumir
+que o que funcionava há alguns meses continua sendo a escolha certa — checar a
+atualidade das ferramentas antes de fechar cada fase, não só no final.

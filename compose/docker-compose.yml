@@ -89,13 +89,17 @@ services:
     networks:
       - backend
 
-  promtail:
-    image: grafana/promtail:3.2.1
+  alloy:
+    image: grafana/alloy:v1.18.1
     restart: unless-stopped
     volumes:
-      - ../observability/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - ../observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    command: -config.file=/etc/promtail/config.yml
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
     networks:
       - backend
 

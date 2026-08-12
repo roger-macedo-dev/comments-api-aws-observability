@@ -18,7 +18,7 @@ AWS · VPC (subnet pública única)
   ├── comments-api (Node/Express) ── postgres (container, ou RDS via toggle)
   └── observabilidade
         prometheus ── alertmanager
-        loki ── promtail
+        loki ── alloy
         grafana (datasources e dashboards provisionados via código)
 
 Segredos: AWS SSM Parameter Store (SecureString), escopados por ambiente via IAM
@@ -38,7 +38,7 @@ auditado por IAM.
 | Banco de dados | PostgreSQL 16 |
 | Containerização | Docker (multi-stage, non-root) + Docker Compose |
 | Infraestrutura | Terraform (VPC, EC2, IAM, Security Group, SSM) |
-| Observabilidade | Prometheus, Grafana, Loki, Promtail, Alertmanager |
+| Observabilidade | Prometheus, Grafana, Loki, Grafana Alloy, Alertmanager |
 | Testes | Jest + Supertest |
 
 ## API
