@@ -377,4 +377,137 @@ testado **através do nginx** (porta 80, não mais direto na API): `POST /api/co
 - [x] Validado ponta a ponta via porta 80 (nginx)
 - [x] Repositório publicado no GitHub como portfólio
 
-Próxima fase: configs de observabilidade (Prometheus, Grafana provisionado, Loki/Promtail, Alertmanager) — Fase 3.
+## Fase 3 — Observabilidade
+
+### 3.1 — Prometheus: scrape + alerting
+
+`observability/prometheus/prometheus.yml` — três jobs (`prometheus`, `comments-api`, `node_exporter`),
+todos referenciados pelo **nome do serviço** no compose (`api:5000`, `node_exporter:9100`), resolvido
+via DNS interno do Docker — mesmo princípio usado em toda a stack desde a Fase 2.
+
+`observability/prometheus/alert-rules.yml` — 4 regras: `NodeExporterDown`, `MemoriaAlta` (herdadas
+do lab anterior, já validadas lá), `APIDown` (equivalente pro job da API) e `TaxaErroAlta`:
+
+```promql
+sum(rate(http_requests_total{job="comments-api", status_code=~"5.."}[5m]))
+/
+sum(rate(http_requests_total{job="comments-api"}[5m])) > 0.1
+```
+
+`sum()` aplicado **antes** da divisão em ambos os lados — correção que evita o `NaN` por mismatch
+de labels (lição já documentada no lab de observabilidade original).
+
+### 3.2 — Alertmanager
+
+Config mínima (`resolve_timeout: 5m`, receiver vazio) — alertas visíveis na UI; webhook
+Discord/Slack fica como próximo passo, não implementado no escopo desta entrega.
+
+### 3.3 — Promtail: mudança de estratégia vs. o lab anterior
+
+No lab AWS, o Promtail lia arquivos de log do host (`/var/log/{messages,secure,...}`) porque a
+aplicação rodava direto na instância via systemd — exigiu build customizado com suporte a journal
+(limitação conhecida da imagem oficial). **Aqui o contexto é diferente**: tudo roda em containers
+Docker, então a fonte correta é o **socket do Docker** (`docker_sd_configs` + `unix:///var/run/docker.sock`),
+que descobre containers automaticamente e captura stdout/stderr de cada um. Não existe mais a
+classe de problema do glob binário (`/var/log/*log` pegando `lastlog` e quebrando o parser) —
+o modelo de coleta é outro. **Não precisamos do build customizado do Promtail neste projeto.**
+
+`relabel_configs` extrai o nome do container como label `container`, pra filtrar por serviço
+no Grafana/Loki.
+
+### 3.4 — Grafana provisionado via YAML (fecha o gap do lab anterior)
+
+No lab anterior, datasources e dashboard eram configurados **clicando na UI** — repetível a cada
+vez que uma instância nova subia. Aqui, dois arquivos YAML resolvem isso permanentemente:
+
+- `provisioning/datasources/datasources.yml` — Prometheus + Loki, `access: proxy` (o servidor
+  Grafana fala com eles, não o browser do usuário — não expõe Prometheus/Loki diretamente),
+  `editable: false` (força mudança via código, não via UI).
+- `provisioning/dashboards/dashboards.yml` (provider) + `dashboards/json/comments-api-red.json`
+  (dashboard) — 4 painéis: **Rate** (`sum(rate(...)) by (route)`), **Errors** (% de 5xx, mesma
+  fórmula corrigida do alerta), **Duration** (`histogram_quantile(0.95, ...)` — p95, não média,
+  pra não esconder outliers) e um painel extra de **SLO/error budget** (disponibilidade % na
+  última hora, com thresholds visuais vermelho/amarelo/verde) — o diferencial sobre "só ter
+  dashboard bonito" identificado na fase de design.
+
+**Validado via API do Grafana (sem clicar em nada na UI):**
+```bash
+curl -s -u admin:<senha> http://localhost:3000/api/datasources   # → Prometheus, Loki
+curl -s -u admin:<senha> http://localhost:3000/api/search         # → Comments API — RED
+```
+Confirma que o provisioning funcionou 100% automático desde o primeiro boot.
+
+### 3.5 — docker-compose.yml expandido: +6 serviços
+
+`node_exporter`, `prometheus` (porta 9091 externa — mesma decisão do lab, consistência entre
+ambientes mesmo sem Cockpit aqui), `alertmanager` (9093), `loki` (sem porta publicada — só
+Grafana/Promtail acessam via rede interna, decisão de segurança), `promtail` (monta o socket
+Docker), `grafana` (3000).
+
+Versões de imagem **fixadas** (`v2.55.1`, `3.2.1`, `11.3.1`), não `latest` — builds reproduzíveis.
+Volumes de config montados `:ro` (read-only) — serviços leem, nunca escrevem config.
+
+**Validado:** `docker compose up -d` — 10 containers no total, todos saudáveis. Prometheus com
+3/3 targets `up` confirmado via `/api/v1/targets`.
+
+### 3.6 — Bug real encontrado: pool do Postgres sem handler de erro derrubava a API
+
+Durante o teste do ciclo de alerta (parar o Postgres pra gerar erros 5xx reais), a API **crashou**
+em vez de responder com erro — o container reiniciou sozinho (`restart: unless-stopped` mascarou
+o problema à primeira vista). Log do container mostrou stack trace de erro não tratado.
+
+**Causa raiz:** o driver `pg` emite um evento `error` no objeto `Pool` quando perde conexão com
+um client idle. Sem um listener registrado para esse evento, o Node.js trata como exceção não
+capturada e **derruba o processo inteiro** — comportamento documentado do driver, não um bug do
+driver em si, mas uma omissão nossa.
+
+**Fix** em `app/src/db/pool.js`:
+```javascript
+pool.on('error', (err) => {
+  console.error('Erro inesperado no pool do Postgres:', err.message);
+});
+```
+mais `connectionTimeoutMillis: 3000` (sem isso, uma nova tentativa de conexão contra uma porta
+fechada pode ficar pendurada indefinidamente — foi o que travou o terminal na primeira tentativa
+de teste, antes do fix).
+
+**Lição:** "matar o Postgres e ver o que acontece" não foi só validação do alerta — expôs uma
+falha de robustez real que só aparece sob falha de dependência, exatamente o tipo de teste que
+justifica existir. Corrigido, rebuildado, revalidado: com o fix, a mesma sequência de 20 requisições
+com banco fora do ar termina rápido, loga o erro, **não derruba o container**.
+
+### 3.7 — Ciclo completo de alerta validado (`inactive → pending → firing → resolved`)
+
+Repetindo o método do lab anterior, mas agora contra a API real (não infraestrutura sintética):
+
+1. `docker stop compose-postgres-1` + 20 requisições → todas retornam 500 (com o fix aplicado,
+   sem travar nem derrubar a API).
+2. Após ~2min (`for: 2m` da regra): `TaxaErroAlta -> firing`, confirmado também no Alertmanager
+   via `/api/v2/alerts` (`state: active`).
+3. `APIDown` permaneceu `inactive` durante todo o incidente — comportamento correto: o `up` do
+   Prometheus reflete se `/metrics` responde (o processo continuou vivo), não se as dependências
+   do processo estão saudáveis. É `TaxaErroAlta` que existe justamente para cobrir esse cenário
+   — distinção importante entre "processo vivo" e "processo saudável".
+4. `docker start compose-postgres-1` + tráfego saudável → após a janela de 5min do `rate()`
+   "esvaziar" os erros antigos, `TaxaErroAlta -> inactive` de novo.
+
+### 3.8 — Loki: validação via rede interna, não pelo host
+
+Loki não tem porta publicada no compose (decisão de segurança — só precisa ser alcançado por
+Grafana/Promtail, ambos na rede interna). Testar com `curl localhost:3100` do host falha
+(`Conexão recusada`) por design, não por erro — a validação correta é de dentro da rede:
+```bash
+docker exec compose-promtail-1 wget -qO- http://loki:3100/loki/api/v1/label/container/values
+```
+Confirmado: logs de todos os 9 containers indexados e rotulados corretamente.
+
+## Fase 3 — CONCLUÍDA ✅
+
+- [x] Prometheus — scrape de API + node_exporter, 4 regras de alerta
+- [x] Alertmanager — config mínima, ciclo completo validado
+- [x] Grafana — provisionamento 100% automático (datasources + dashboard RED/SLO), zero clique
+- [x] Loki + Promtail — coleta via socket Docker, logs de todos os serviços confirmados
+- [x] Bug de robustez real encontrado e corrigido (pool sem handler de erro)
+- [x] docker-compose.yml com 10 serviços, todos saudáveis
+
+Próxima fase: Terraform — provisionamento da infraestrutura AWS (VPC, EC2, SG, IAM, SSM, state remoto) — Fase 4.

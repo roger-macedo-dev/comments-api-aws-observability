@@ -1,0 +1,43 @@
+groups:
+  - name: infra
+    rules:
+      - alert: NodeExporterDown
+        expr: up{job="node_exporter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "node_exporter fora do ar"
+          description: "Target {{ $labels.instance }} não responde há mais de 1 minuto."
+
+      - alert: MemoriaAlta
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 80
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Memória acima de 80%"
+          description: "Uso de memória em {{ $labels.instance }}: {{ $value | humanize }}%."
+
+  - name: app
+    rules:
+      - alert: APIDown
+        expr: up{job="comments-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "comments-api fora do ar"
+          description: "API não responde há mais de 1 minuto."
+
+      - alert: TaxaErroAlta
+        expr: |
+          sum(rate(http_requests_total{job="comments-api", status_code=~"5.."}[5m]))
+          /
+          sum(rate(http_requests_total{job="comments-api"}[5m])) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Taxa de erro acima de 10%"
+          description: "{{ $value | humanizePercentage }} das requisições retornando 5xx nos últimos 5min."

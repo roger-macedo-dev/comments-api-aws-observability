@@ -1,0 +1,71 @@
+{
+  "title": "Comments API — RED",
+  "uid": "comments-api-red",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Rate — requisições/s",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{job=\"comments-api\"}[5m])) by (route)",
+          "legendFormat": "{{route}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Errors — taxa de erro 5xx (%)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "100 * sum(rate(http_requests_total{job=\"comments-api\", status_code=~\"5..\"}[5m])) / sum(rate(http_requests_total{job=\"comments-api\"}[5m]))",
+          "legendFormat": "erro %"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Duration — p95 latência (s)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=\"comments-api\"}[5m])) by (le, route))",
+          "legendFormat": "{{route}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "SLO — error budget (janela 1h, alvo 99%)",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "100 * (1 - (sum(increase(http_requests_total{job=\"comments-api\", status_code=~\"5..\"}[1h])) or vector(0)) / (sum(increase(http_requests_total{job=\"comments-api\"}[1h])) or vector(1)))",
+          "legendFormat": "disponibilidade %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 95 },
+              { "color": "green", "value": 99 }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
