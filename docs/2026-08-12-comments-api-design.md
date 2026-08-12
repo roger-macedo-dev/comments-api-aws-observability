@@ -9,7 +9,7 @@
 Projeto: implantar a **infraestrutura (obrigatório)** e a
 **API REST de Comentários (opcional/diferencial)** com o máximo de automação possível,
 incluindo a esteira de deploy, e implementar ambientes distintos (dev/test/prod) com
-configurações apropriadas. A solução deve ser defensável em entrevista: cada escolha
+configurações apropriadas. A solução deve ser tecnicamente defensável: cada escolha
 tem um porquê explícito e um caminho de evolução articulado.
 
 A API permite que internautas enviem comentários em texto de uma matéria e listem o que

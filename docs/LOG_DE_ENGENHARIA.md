@@ -9,12 +9,12 @@
 
 ### 0.1 — Por que uma VM dedicada?
 
-Decisão: criar `Control Node Desafio` separado do lab antigo.
+Decisão: criar `ControlNode` (estação de controle dedicada) separada do lab antigo.
 
 **Por quê:**
 - Isolamento — nada deste projeto mistura com o lab de observabilidade anterior.
 - Reprodutibilidade — se quebrar, recria do zero, não carrega lixo de outro projeto.
-- Defesa na entrevista — "montei o ambiente do zero" é argumento mais forte que "reaproveitei uma VM velha".
+- Rastreabilidade — "montei o ambiente do zero" é argumento mais forte de engenharia do que "reaproveitei uma VM velha".
 
 **Specs escolhidas:** AlmaLinux 9, 2 vCPU, 4GB RAM, 30GB disco.
 - AlmaLinux = mesma família do RHEL, terreno que você já domina (RHCE), e combina com Amazon Linux (RHEL-like) que será o alvo na AWS — menos atrito de sintaxe entre estação de controle e servidor remoto.
@@ -137,10 +137,10 @@ Estação de controle `ControlNode` (192.168.56.20) pronta. Próxima fase: API N
 
 ### 1.1 — Estrutura do repo
 
-Repo movido pra dentro da VM: `~/desafio` (não mais no Windows — as ferramentas de infra rodam aqui).
+Repo movido pra dentro da VM: `~/comments-api-aws-observability` (não mais no Windows — as ferramentas de infra rodam aqui).
 
 ```bash
-mkdir -p ~/desafio/app/src/{routes,db}
+mkdir -p ~/comments-api-aws-observability/app/src/{routes,db}
 git init
 git branch -m master main    # alinha com o pipeline: main→prod, develop→dev
 ```
@@ -295,8 +295,8 @@ mais seguro pra arquivos estruturados curtos.
 ### 2.1 — Publicação do repositório no GitHub
 
 Repo criado como `comments-api-aws-observability` (público) — nome descreve stack e
-arquitetura, sem referência à origem do desafio (portfólio deve comunicar tecnologia,
-não contexto de onde surgiu). Autenticação via chave SSH dedicada (`~/.ssh/id_ed25519_github`),
+arquitetura, sem referência a nenhum contexto externo (portfólio deve comunicar tecnologia,
+não a motivação de origem). Autenticação via chave SSH dedicada (`~/.ssh/id_ed25519_github`),
 não a chave pessoal do lab — isola credenciais por finalidade.
 
 ```bash
@@ -647,9 +647,9 @@ suporte comercial nem atualizações futuras. Substituto oficial: **Grafana Allo
 Restante da stack seguia atual (Prometheus v2.55.1, Grafana v11.3.1, Loki v3.2.1,
 Alertmanager v0.27.0 — todos com suporte ativo).
 
-**Por que corrigir antes de seguir:** usar uma ferramenta sem suporte numa solução que
-será defendida como "atual" é um risco de defesa real, não só estética — resposta fraca
-para "por que Promtail?" numa entrevista técnica.
+**Por que corrigir antes de seguir:** usar uma ferramenta sem suporte numa solução
+apresentada como "atual" é um risco técnico real, não só estética — resposta fraca
+pra qualquer avaliação séria sobre "por que Promtail?".
 
 **Migração:**
 - `observability/alloy/config.alloy` — configuração em linguagem **River** (declarativa,

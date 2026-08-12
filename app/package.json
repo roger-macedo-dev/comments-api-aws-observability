@@ -11,7 +11,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "API de comentários — Desafio Globo",
+  "description": "API de comentários — plataforma de discussão por matéria",
   "dependencies": {
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
