@@ -17,6 +17,22 @@ jobs:
     defaults:
       run:
         working-directory: app
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: comments
+          POSTGRES_PASSWORD: comments
+          POSTGRES_DB: comments
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://comments:comments@localhost:5432/comments
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,6 +41,7 @@ jobs:
           cache: 'npm'
           cache-dependency-path: app/package-lock.json
       - run: npm ci
+      - run: npm run migrate
       - run: npm test
 
   security:
@@ -42,7 +59,7 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=high
       - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: app
