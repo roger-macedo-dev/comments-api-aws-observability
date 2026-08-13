@@ -123,5 +123,5 @@ plano no código ou no host.
 - [x] Stack de observabilidade provisionada como código
 - [x] Infraestrutura AWS via Terraform (rede, EC2, IAM, SSM)
 - [x] Configuração automatizada do host via Ansible (aws_ssm, zero SSH)
-- [ ] Pipeline de CI/CD (build, testes, segurança, deploy)
+- [x] Pipeline de CI (build, testes, segurança, publicação da imagem)
 - [ ] Deploy automatizado com smoke test e rollback

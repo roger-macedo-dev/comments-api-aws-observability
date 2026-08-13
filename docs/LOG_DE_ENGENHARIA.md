@@ -706,3 +706,14 @@ Health check, criacao e listagem de comentario via curl direto no IP publico da 
 ### Warnings de compatibilidade resolvidos
 
 O ansible-core do control-node (2.14.18, via RPM do sistema) era antigo demais pra amazon.aws/community.aws instaladas. Python 3.9 do sistema limita o ansible-core em ~2.15 (2.16+ exige Python 3.10+), entao a correcao foi via pip: upgrade do ansible-core para 2.15.13 e downgrade das collections para as versoes que suportam essa faixa (amazon.aws 7.6.1, community.aws 7.2.0). Nenhum warning restante; `--check` roda limpo.
+
+## Fase 6 — CI (GitHub Actions)
+
+Pipeline com tres jobs: test (Postgres como servico, migration + jest), security (npm audit + trivy scan de filesystem) e build-and-push (buildar e publicar a imagem no GHCR, so em push pra main, dependente dos dois jobs anteriores).
+
+Duas falhas na primeira execucao, corrigidas na sequencia:
+
+- Tag do trivy-action estava sem o prefixo `v` (`0.28.0` em vez de `v0.28.0`) -- corrigido apos consultar as tags reais do repositorio via API do GitHub, fixado em `v0.36.0`.
+- Job de testes falhava porque a suite depende de Postgres (`DATABASE_URL`) e nao havia banco no runner -- corrigido adicionando um servico `postgres:16-alpine` ao job, com healthcheck, e rodando a migration antes do `npm test`.
+
+Run #2 passou limpo: testes, scan de seguranca e build/push da imagem confirmados no GitHub Actions.
