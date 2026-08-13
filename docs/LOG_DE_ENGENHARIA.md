@@ -702,3 +702,7 @@ Health check, criacao e listagem de comentario via curl direto no IP publico da 
 ### Pendencias conscientes
 
 - Warnings amazon.aws/community.aws nao suportam ansible-core 2.14.18: cosmeticos por ora (tudo funcional), resolver antes do fechamento do projeto.
+
+### Warnings de compatibilidade resolvidos
+
+O ansible-core do control-node (2.14.18, via RPM do sistema) era antigo demais pra amazon.aws/community.aws instaladas. Python 3.9 do sistema limita o ansible-core em ~2.15 (2.16+ exige Python 3.10+), entao a correcao foi via pip: upgrade do ansible-core para 2.15.13 e downgrade das collections para as versoes que suportam essa faixa (amazon.aws 7.6.1, community.aws 7.2.0). Nenhum warning restante; `--check` roda limpo.
