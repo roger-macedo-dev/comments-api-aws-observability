@@ -17,7 +17,6 @@
     dest: /opt/comments-api/observability/
     mode: preserve
 
-
 - name: Renderiza .env com segredos do SSM
   ansible.builtin.template:
     src: env.j2
@@ -25,21 +24,31 @@
     mode: "0600"
 
 - name: Verifica se a imagem já existe no host remoto
-  ansible.builtin.command: docker image inspect comments-api:local
+  ansible.builtin.command: "docker image inspect {{ api_image }}"
   register: image_check
   failed_when: false
   changed_when: false
 
-- name: Copia imagem da API (tar) para o host remoto
+- name: Copia imagem da API (tar) para o host remoto (build local)
   ansible.builtin.copy:
     src: /tmp/comments-api-local.tar
     dest: /tmp/comments-api-local.tar
     mode: "0644"
-  when: image_check.rc != 0
+  when:
+    - image_check.rc != 0
+    - api_image == "comments-api:local"
 
-- name: Carrega imagem no Docker remoto
+- name: Carrega imagem no Docker remoto (build local)
   ansible.builtin.command: docker load -i /tmp/comments-api-local.tar
-  when: image_check.rc != 0
+  when:
+    - image_check.rc != 0
+    - api_image == "comments-api:local"
+
+- name: Puxa imagem do GHCR (CD)
+  ansible.builtin.command: "docker pull {{ api_image }}"
+  when:
+    - image_check.rc != 0
+    - api_image != "comments-api:local"
 
 - name: Sobe a stack via Docker Compose
   ansible.builtin.command: docker compose --env-file .env up -d

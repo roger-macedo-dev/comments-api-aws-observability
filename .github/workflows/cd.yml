@@ -1,0 +1,41 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy-dev:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-east-2
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instala Ansible e collections AWS
+        run: |
+          pip install ansible-core==2.15.13 boto3 botocore
+          ansible-galaxy collection install 'amazon.aws:<8.0.0' 'community.aws:<8.0.0'
+
+      - name: Instala session-manager-plugin
+        run: |
+          curl -sSL "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" -o /tmp/smp.deb
+          sudo dpkg -i /tmp/smp.deb
+
+      - name: Deploy via Ansible (aws_ssm)
+        working-directory: ansible
+        run: |
+          IMAGE_TAG="${{ github.event.workflow_run.head_sha || github.sha }}"
+          ansible-playbook -i inventory/dev.aws_ec2.yml site.yml --tags deploy \
+            -e "api_image=ghcr.io/${{ github.repository_owner }}/comments-api:${IMAGE_TAG}"
