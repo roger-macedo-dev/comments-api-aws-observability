@@ -1,0 +1,29 @@
+---
+- name: Instala Docker CE
+  ansible.builtin.dnf:
+    name: docker
+    state: present
+
+- name: Habilita e inicia o serviço Docker
+  ansible.builtin.systemd:
+    name: docker
+    enabled: true
+    state: started
+
+- name: Adiciona ec2-user ao grupo docker
+  ansible.builtin.user:
+    name: ec2-user
+    groups: docker
+    append: true
+
+- name: Cria diretório de plugins CLI do Docker
+  ansible.builtin.file:
+    path: /usr/libexec/docker/cli-plugins
+    state: directory
+    mode: "0755"
+
+- name: Instala Docker Compose plugin (binário oficial)
+  ansible.builtin.get_url:
+    url: https://github.com/docker/compose/releases/download/v5.4.0/docker-compose-linux-x86_64
+    dest: /usr/libexec/docker/cli-plugins/docker-compose
+    mode: "0755"

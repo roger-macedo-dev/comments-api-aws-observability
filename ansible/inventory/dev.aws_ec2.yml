@@ -1,0 +1,12 @@
+plugin: amazon.aws.aws_ec2
+regions:
+  - us-east-2
+filters:
+  tag:Name: comments-api-dev
+  instance-state-name: running
+compose:
+  ansible_host: instance_id
+  ansible_connection: "'aws_ssm'"
+  ansible_aws_ssm_bucket_name: "'comments-api-tfstate-428521271992'"
+  ansible_aws_ssm_region: "'us-east-2'"
+  ansible_python_interpreter: "'/usr/bin/python3'"

@@ -1,0 +1,11 @@
+---
+- name: Configura instância comments-api
+  hosts: all
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: docker
+      tags: [infra, docker]
+    - role: deploy
+      tags: [deploy, app]
