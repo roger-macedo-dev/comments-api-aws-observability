@@ -41,6 +41,6 @@ nginx em HTTP             →  ALB + ACM (TLS)
 |---|---|
 | Automação de infraestrutura (IaaS) | ✅ Terraform — provisionamento completo, validado end-to-end na AWS |
 | Automação de configuração (IaaC) | ✅ Ansible (`aws_ssm`) — validado end-to-end na AWS, zero SSH |
-| Pipeline de deploy | ✅ GitHub Actions — testes, scan de segurança (npm audit + Trivy) e build/push automático pro GHCR |
+| Pipeline de deploy | ✅ GitHub Actions — testes, segurança, build/push (GHCR) e deploy automático em dev via Ansible/aws_ssm; gate manual de prod documentado como caminho de evolução |
 | Monitoramento e métricas | ✅ Prometheus + Grafana + Loki + Alloy + Alertmanager, métricas RED da API, dashboard com painel de SLO |
 | Desenvolvimento da API | ✅ Node/Express + Postgres, testado (7 testes automatizados) |

@@ -717,3 +717,23 @@ Duas falhas na primeira execucao, corrigidas na sequencia:
 - Job de testes falhava porque a suite depende de Postgres (`DATABASE_URL`) e nao havia banco no runner -- corrigido adicionando um servico `postgres:16-alpine` ao job, com healthcheck, e rodando a migration antes do `npm test`.
 
 Run #2 passou limpo: testes, scan de seguranca e build/push da imagem confirmados no GitHub Actions.
+
+## Fase 7 — CD (deploy automatico em dev)
+
+Workflow separado (cd.yml), disparado via workflow_run apos o CI terminar com sucesso na main (mais workflow_dispatch pra deploy manual sob demanda). O job roda Ansible do proprio runner do GitHub Actions contra o host remoto, usando o mesmo modelo de acesso aws_ssm ja validado na Fase 5 -- nenhuma mudanca na superficie de acesso, so muda quem dispara.
+
+Duas adaptacoes na role deploy pra funcionar a partir de um runner efemero (sem estado entre execucoes):
+
+- Variavel api_image, com default comments-api:local (preserva o fluxo manual de build-local-e-transferir usado no laptop) e um segundo caminho -- docker pull -- usado quando a imagem vem do GHCR (fluxo do CD). A tarefa que builda/transfere o tar so roda quando api_image e o valor local; a que puxa do registry so roda no caso contrario.
+- Pacote da imagem no GHCR mantido publico, pra o pull no host remoto nao exigir login/token.
+
+Duas falhas na configuracao inicial do workflow, corrigidas:
+
+- Primeiro disparo manual usou a SHA do commit do proprio push do CD (que nao tinha passado pelo job de build da CI) -- imagem nao existia (manifest unknown). Corrigido: quando o disparo e manual (workflow_dispatch), usa a tag latest; quando vem de um workflow_run do CI, usa a SHA real do commit que foi buildado.
+- github.event.workflow_run.head_sha as vezes nao refletia o commit mais recente no primeiro teste, porque o dispatch manual estava usando uma ref desatualizada no seletor da UI -- resolvido reabrindo a pagina do workflow antes de disparar.
+
+Validado end-to-end: push que mexeu em ci.yml disparou CI (rodou limpo) que disparou CD automaticamente, que fez o deploy via SSM com a imagem publicada no GHCR pela propria CI -- ciclo fechado sem intervencao manual. App validada via curl externo apos o deploy automatico, dado previamente inserido preservado (volume persistente do Postgres).
+
+### Escopo consciente: prod
+
+So o ambiente dev existe provisionado na AWS (decisao de custo). O gate manual de prod (decisao #6 do DECISOES.md) fica documentado como caminho de evolucao -- nao foi construido um ambiente prod fake so pra demonstrar o mecanismo de approval do GitHub Environments.

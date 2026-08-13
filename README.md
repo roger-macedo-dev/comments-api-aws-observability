@@ -8,7 +8,7 @@ a API permite inserção e listagem cronológica por conteúdo.
 
 ```
 GitHub ─┐
-         │  (pipeline de deploy — em construção)
+         │  (CI/CD: GitHub Actions)
          ▼
 AWS · VPC (subnet pública única)
   EC2 (Amazon Linux 2023, sem SSH — acesso via IAM/SSM Session Manager)
@@ -124,4 +124,4 @@ plano no código ou no host.
 - [x] Infraestrutura AWS via Terraform (rede, EC2, IAM, SSM)
 - [x] Configuração automatizada do host via Ansible (aws_ssm, zero SSH)
 - [x] Pipeline de CI (build, testes, segurança, publicação da imagem)
-- [ ] Deploy automatizado com smoke test e rollback
+- [x] Deploy automático em dev via CI/CD (Ansible/aws_ssm, pull do GHCR)
