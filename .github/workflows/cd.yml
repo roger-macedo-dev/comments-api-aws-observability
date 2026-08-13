@@ -36,6 +36,10 @@ jobs:
       - name: Deploy via Ansible (aws_ssm)
         working-directory: ansible
         run: |
-          IMAGE_TAG="${{ github.event.workflow_run.head_sha || github.sha }}"
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            IMAGE_TAG="${{ github.event.workflow_run.head_sha }}"
+          else
+            IMAGE_TAG="latest"
+          fi
           ansible-playbook -i inventory/dev.aws_ec2.yml site.yml --tags deploy \
             -e "api_image=ghcr.io/${{ github.repository_owner }}/comments-api:${IMAGE_TAG}"
