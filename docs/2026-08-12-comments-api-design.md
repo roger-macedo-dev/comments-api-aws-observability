@@ -2,90 +2,92 @@
 
 **Data:** 2026-08-12
 **Autor:** Roger Macedo
-**Status:** Aprovado (pré-implementação)
+**Status:** Implementado
 
 ## 1. Contexto e objetivo
 
-Projeto: implantar a **infraestrutura (obrigatório)** e a
-**API REST de Comentários (opcional/diferencial)** com o máximo de automação possível,
-incluindo a esteira de deploy, e implementar ambientes distintos (dev/test/prod) com
-configurações apropriadas. A solução deve ser tecnicamente defensável: cada escolha
-tem um porquê explícito e um caminho de evolução articulado.
+Objetivo do projeto: uma API de comentários simples servindo de carga de trabalho de
+referência para validar uma esteira completa de infraestrutura como código — provisionamento,
+configuração, observabilidade e deploy automatizados, com ambientes isolados (dev/test/prod).
+A prioridade é a infraestrutura e a automação; a API é o serviço real usado para exercitar
+tudo isso de ponta a ponta.
 
-A API permite que internautas enviem comentários em texto de uma matéria e listem o que
-outras pessoas comentaram. Duas rotas essenciais: inserção e listagem por matéria.
+A API permite inserir um comentário associado a um conteúdo (`content_id`) e listar os
+comentários de um conteúdo em ordem cronológica. Duas rotas essenciais: inserção e listagem.
 
-### Critérios de avaliação (do enunciado)
+### Objetivos técnicos
 
-| Critério | Peso | Como a solução atende |
-|---|---|---|
-| Automação da infra (IaaS/PaaS) | Obrigatório | Terraform provisiona VPC/EC2/SG do zero |
-| Automação de setup/config (IaaC) | Obrigatório | Ansible idempotente, nada manual no host |
-| Pipeline de deploy | Desejável | GitHub Actions end-to-end |
-| Monitoramento de serviços e métricas | Desejável | Prometheus/Grafana/Loki/Alertmanager + RED/SLO |
-| Desenvolvimento da API | Diferencial | Express + Postgres com testes e métricas |
+| Objetivo | Como a solução atende |
+|---|---|
+| Automação da infraestrutura (IaaS) | Terraform provisiona VPC/EC2/SG do zero |
+| Automação de configuração (IaaC) | Ansible idempotente via `aws_ssm`, nada manual no host |
+| Pipeline de deploy | GitHub Actions (CI + CD) end-to-end |
+| Monitoramento e métricas | Prometheus/Grafana/Loki/Alloy/Alertmanager + RED/SLO |
+| API | Express + Postgres, testada e instrumentada |
 
 ## 2. Decisões de arquitetura (ADRs resumidos)
 
 | # | Decisão | Alternativas descartadas | Porquê |
 |---|---|---|---|
-| 1 | Cloud: **AWS** | GCP, Azure | Domínio do candidato; ecossistema conhecido |
-| 2 | Compute: **EC2 + Ansible + Docker Compose** | ECS Fargate, EKS | Ponto forte do candidato (IaaC), custo baixo, defende IaaS+IaaC de ponta a ponta. EKS = caro/overkill; contradiz disciplina de custo |
-| 3 | API: **Node/Express + Postgres** | Flask, Go | Stack web moderna comum; demonstra amplitude |
-| 4 | Ambientes: **Terraform workspaces sob demanda** | 3 EC2 24/7; 1 host/3 stacks | Isolamento real de IaC multi-ambiente sem custo permanente |
-| 5 | CI/CD: **GitHub Actions + ghcr.io** | GitLab CI self-hosted | Integra com o portfólio no GitHub; ghcr grátis |
-| 6 | Deploy: **auto em dev, gate manual em prod** | auto em prod; tudo manual | GitOps com trava; evita derrubar prod sozinho |
-| 7 | Acesso host: **SSM Session Manager** | SSH + key + porta 22 | Zero superfície de ataque; sem IP fixo; auditado por IAM |
-| 8 | Secrets: **SSM Parameter Store** | .env no host; secrets no Git | Least privilege via IAM; segredo fora do host e do Git |
-| 9 | DB prod: **toggle RDS** (`use_rds`) | sempre container; sempre RDS | dev/test barato em container; prod com backup/multi-AZ gerenciado por flip de variável (12-factor) |
-| 10 | State Terraform: **S3 + DynamoDB lock** | state local | Colaboração, lock, durabilidade |
+| 1 | Cloud: **AWS** | GCP, Azure | Ecossistema conhecido |
+| 2 | Compute: **EC2 + Ansible + Docker Compose** | ECS Fargate, EKS | Automação de ponta a ponta (IaaS+IaaC) com custo controlado. EKS é overkill de custo/complexidade pro escopo |
+| 3 | API: **Node/Express + Postgres** | Flask, Go | Stack web moderna, ecossistema maduro de testes e observabilidade |
+| 4 | Ambientes: **Terraform workspaces sob demanda** | 3 EC2 24/7; 1 host/3 stacks | Isolamento real de IaC multi-ambiente sem custo de infraestrutura ociosa |
+| 5 | CI/CD: **GitHub Actions + GHCR** | GitLab CI self-hosted | Integração nativa com o repositório do projeto; registry grátis |
+| 6 | Deploy: **automático em dev, gate manual em prod** | automático em ambos | Segurança operacional — falha de deploy não derruba produção sem revisão |
+| 7 | Acesso ao host: **SSM Session Manager** | SSH + chave + porta 22 | Elimina porta exposta; acesso auditado via IAM, sem gestão de chaves distribuídas |
+| 8 | Secrets: **SSM Parameter Store** | `.env` no host / segredos no Git | Segredos nunca residem no host nem no controle de versão; least privilege via IAM |
+| 9 | Banco em prod: **toggle RDS** (`use_rds`) | sempre container; sempre RDS | Ambientes de baixo custo usam container; produção usa serviço gerenciado (backup, Multi-AZ) via flag de configuração — 12-factor |
+| 10 | State do Terraform: **S3 com lock nativo** (`use_lockfile`) | state local; lock via DynamoDB | Colaboração segura, lock contra execução concorrente, sem tabela separada — método atual recomendado pelo Terraform |
+| 11 | Coleta de logs: **Grafana Alloy** | Promtail | Promtail atingiu EOL; Alloy é o coletor atual recomendado pelo Grafana Labs |
 
 ## 3. Arquitetura
 
 ### 3.1 Fluxo de deploy
 
 ```
-Dev → git push
+Dev → git push (main)
    │
 GitHub Actions
-   ├─ CI:  npm lint + test
-   │       Trivy (scan imagem) + Checkov (scan IaC)
-   │       docker build → push ghcr.io/<user>/comments-api:<sha>
-   └─ CD:  branch develop → workspace dev  (deploy automático)
-           branch main    → workspace prod (gate de aprovação manual)
-             terraform apply   → cria/atualiza VPC/EC2/SG/IAM/SSM
-             ansible-playbook   → configura host + sobe stack via compose
-             smoke-test         → curl /health + round-trip real de comment
-             falhou? → rollback para tag de imagem anterior
+   ├─ CI:  npm ci + jest (com Postgres de serviço)
+   │       npm audit + Trivy (scan de filesystem)
+   │       docker build → push ghcr.io/<user>/comments-api:<sha> e :latest
+   └─ CD:  disparado após CI verde (workflow_run) ou manualmente (workflow_dispatch)
+             ansible-playbook via aws_ssm → configura host + docker pull da imagem + compose up
+             validação: health check + round-trip real de comentário
 ```
+
+Gate manual de produção e rollback automático estão desenhados (decisão #6) mas não
+construídos — ver seção 9 (fora de escopo).
 
 ### 3.2 Topologia AWS (estado da entrega)
 
 ```
 VPC
-├── subnet pública
-│     nginx (reverse proxy — único componente exposto, porta 80)
-│     SSM endpoints (acesso administrativo, sem SSH)
-└── subnet privada
-      comments-api (Node, expõe /metrics)  ── postgres (container+volume) | RDS (toggle)
-      observabilidade:
-        prometheus + alertmanager
-        loki + promtail
-        grafana (provisionado via YAML: datasources + dashboard RED/SLO)
-        node_exporter
+└── subnet pública
+      EC2 (Amazon Linux 2023, sem SSH — acesso via SSM Session Manager)
+      │
+      ├── nginx (porta 80, único componente exposto)
+      ├── comments-api (Node, expõe /metrics) ── postgres (container+volume) | RDS (toggle)
+      └── observabilidade
+            prometheus + alertmanager
+            loki + alloy
+            grafana (provisionado via YAML: datasources + dashboard RED/SLO)
+            node_exporter
+
 Acesso ao host: SSM Session Manager (IAM; sem porta 22 aberta)
-Secrets:        SSM Parameter Store (senha DB, chaves) puxados no deploy
-State remoto:   S3 (backend) + DynamoDB (lock)
+Secrets:        SSM Parameter Store (senha DB, chaves) lidos no deploy via lookup do Ansible
+State remoto:   S3 (backend) + lock nativo (use_lockfile)
 ```
 
-### 3.3 Evolução (diagramada em `docs/`, NÃO construída — peça de defesa)
+### 3.3 Caminho de evolução (documentado, não construído)
 
 ```
-ENTREGA (challenge)          →   EVOLUÇÃO (defendida)
-1 EC2 + Docker Compose       →   ASG + ALB + N hosts     →   ECS Fargate
-Postgres container           →   RDS Multi-AZ (toggle já implementado)
-nginx (porta 80)             →   ALB + ACM (HTTPS/TLS)
-observabilidade no host      →   Amazon Managed Prometheus/Grafana (opcional)
+ATUAL                        →   EVOLUÇÃO
+1 EC2 + Docker Compose        →   ASG + ALB + N hosts     →   ECS Fargate
+Postgres container            →   RDS Multi-AZ (toggle já implementado)
+nginx (porta 80)              →   ALB + ACM (HTTPS/TLS)
+observabilidade no host       →   Amazon Managed Prometheus/Grafana (opcional)
 ```
 
 ## 4. Estrutura do repositório
@@ -93,39 +95,40 @@ observabilidade no host      →   Amazon Managed Prometheus/Grafana (opcional)
 ```
 comments-api-aws-observability/
 ├── terraform/
-│   ├── main.tf              # VPC, subnets, SG, EC2, IAM role (SSM), SSM params
-│   ├── rds.tf               # RDS condicional (count = var.use_rds ? 1 : 0)
-│   ├── backend.tf           # S3 + DynamoDB
+│   ├── network.tf security.tf iam.tf secrets.tf ec2.tf
+│   ├── versions.tf          # backend S3 + lock nativo
 │   ├── variables.tf outputs.tf
 │   └── envs/{dev,test,prod}.tfvars
 ├── ansible/
-│   ├── inventory/           # dinâmico a partir de output do Terraform
-│   ├── site.yml             # tags: infra / app / observability
-│   └── roles/{docker,firewall,swap,app,postgres,nginx,observability}/
+│   ├── ansible.cfg
+│   ├── inventory/dev.aws_ec2.yml  # dinâmico via amazon.aws.aws_ec2
+│   ├── site.yml
+│   └── roles/
+│       ├── docker/          # Docker CE + Compose plugin
+│       └── deploy/          # copia compose/observability, renderiza .env, sobe a stack
 ├── app/
 │   ├── src/
 │   │   ├── server.js        # Express bootstrap
-│   │   ├── routes/comments.js  # POST /api/comment/new, GET /api/comment/list/:id
-│   │   ├── routes/health.js    # GET /health
-│   │   ├── db/pool.js migrations/
+│   │   ├── routes/          # POST /api/comment/new, GET /api/comment/list/:id, /health
+│   │   ├── db/pool.js, db/migrate.js
 │   │   └── metrics.js       # prom-client: RED (rate/errors/duration)
-│   ├── tests/               # jest + supertest
-│   └── Dockerfile           # multi-stage, imagem mínima, non-root
+│   ├── tests/                # jest + supertest
+│   └── Dockerfile          # multi-stage, imagem mínima, non-root
 ├── observability/
 │   ├── prometheus/{prometheus.yml,alert-rules.yml}
 │   ├── alertmanager/alertmanager.yml
-│   ├── promtail/promtail-config.yml
-│   └── grafana/provisioning/{datasources,dashboards}/   # fecha o gap manual do lab
+│   ├── alloy/config.alloy
+│   └── grafana/provisioning/{datasources,dashboards}/
 ├── compose/
 │   ├── docker-compose.yml   # api + postgres + nginx + observabilidade
-│   └── .env.j2              # template Ansible por ambiente
+│   └── .env.example
 ├── .github/workflows/
-│   ├── ci.yml               # lint, test, scan, build, push
-│   ├── deploy.yml           # terraform + ansible + smoke-test + rollback
-│   └── destroy.yml          # guardrail de custo (destroy manual)
+│   ├── ci.yml                # testes, segurança, build/push
+│   └── cd.yml                # deploy automático em dev via Ansible/aws_ssm
 └── docs/
-    ├── architecture.md      # diagramas atual + evolução
-    └── adr/                 # decisões detalhadas
+    ├── 2026-08-12-comments-api-design.md
+    ├── DECISOES.md
+    └── LOG_DE_ENGENHARIA.md
 ```
 
 ## 5. Componentes
@@ -146,99 +149,104 @@ comments-api-aws-observability/
 | coluna | tipo | nota |
 |---|---|---|
 | id | serial PK | |
-| email | text not null | validado (formato) |
+| email | text not null | |
 | comment | text not null | |
-| content_id | integer not null | indexado (listagem por matéria) |
+| content_id | integer not null | indexado (listagem por conteúdo) |
 | created_at | timestamptz default now() | |
 
 **Validação:** email com formato válido, `comment` não vazio, `content_id` inteiro > 0.
 Erros retornam 400 com mensagem. 12-factor: config 100% via env (`DATABASE_URL`, `PORT`,
 `LOG_LEVEL`). Stateless (escala horizontal no futuro sem sessão local).
 
-**Migrations:** aplicadas na subida do container (script idempotente `CREATE TABLE IF NOT EXISTS`).
+**Migrations:** aplicadas por um container `migrate` que roda antes da API subir, com
+script idempotente (`CREATE TABLE IF NOT EXISTS`).
 
 ### 5.2 Terraform (IaaS)
 
-- Workspaces = ambientes (`dev`, `test`, `prod`). `terraform workspace select` no pipeline.
-- Recursos: VPC, 2 subnets (pública/privada), IGW, route tables, SG least privilege
-  (só 80 público; API/DB/observabilidade internos), EC2 com IAM instance profile
-  (permissões SSM + leitura de Parameter Store), key-less.
-- `rds.tf` condicional por `var.use_rds`. Output: IP/DNS, endpoint DB, id da instância.
-- Backend S3 + DynamoDB para state e lock.
+- Workspaces = ambientes (`dev`, `test`, `prod`); só `dev` está provisionado hoje.
+- Recursos: VPC, subnet pública única, IGW, route table, SG least privilege (só porta 80
+  pública; API/DB/observabilidade só na rede interna do Docker), EC2 com IAM instance
+  profile (permissões SSM + leitura escopada de Parameter Store), sem `key_name`.
+- `secrets.tf` gera credenciais via `random_password`, armazenadas como `SecureString`.
+- Backend S3 com lock nativo (`use_lockfile`) para state e concorrência.
 
 ### 5.3 Ansible (IaaC)
 
-- Roles idempotentes: `docker` (instala engine), `swap` (1GB, herdado do lab), `firewall`,
-  `postgres` (container, quando não-RDS), `app` (pull imagem + compose up), `nginx`
-  (reverse proxy), `observability` (stack completa + provisioning Grafana).
-- Inventário dinâmico a partir dos outputs do Terraform.
-- Secrets lidos do SSM Parameter Store no momento do deploy, injetados no `.env` gerado
-  (nunca versionado).
-- Tags `infra` / `app` / `observability` para execução seletiva.
+- Duas roles: `docker` (instala engine + Compose plugin) e `deploy` (copia `compose/` e
+  `observability/`, renderiza `.env` com segredos lidos do SSM via lookup, sobe a stack).
+- Inventário dinâmico via plugin `amazon.aws.aws_ec2`, conexão `aws_ssm` — zero SSH também
+  na etapa de configuração.
+- Suporta dois modos de origem de imagem: build local + transferência (uso manual) ou
+  `docker pull` de uma imagem já publicada no GHCR (uso via CD).
 
 ### 5.4 Observabilidade
 
 - **Prometheus:** scrape de `node_exporter` (host) e `comments-api /metrics` (RED).
 - **Grafana:** provisionado via YAML (datasources Prometheus+Loki, dashboard RED + painel
-  de SLO/error budget). Sem clique manual — fecha o gap identificado no lab anterior.
-- **Loki + Promtail:** logs do host e dos containers (lista explícita de arquivos, sem glob
-  binário — lição do lab).
+  de SLO/error budget). Sem clique manual na UI.
+- **Loki + Grafana Alloy:** logs do host e dos containers.
 - **Alertmanager:** regras `NodeExporterDown`, `MemoriaAlta`, `TaxaErroAlta` (RED),
-  `APIDown`. Receiver de webhook (Discord/Slack) com `send_resolved`.
+  `APIDown`.
 
 ### 5.5 CI/CD (GitHub Actions)
 
-- **ci.yml:** roda em todo push/PR — `npm ci`, lint, `jest`, Checkov (Terraform), Trivy
-  (imagem buildada), build e push para ghcr.io com tag `<sha>` e `latest` do ambiente.
-- **deploy.yml:** disparado por push em `develop` (→dev, auto) ou `main` (→prod, com
-  `environment: prod` protegido por aprovação). Passos: configura credenciais AWS (OIDC,
-  sem chave estática), `terraform apply` no workspace, `ansible-playbook`, smoke-test,
-  rollback automático em falha (redeploy da tag anterior registrada).
-- **destroy.yml:** `workflow_dispatch` manual para `terraform destroy` — guardrail de custo.
-- Guardrail extra: job agendado de auto-stop noturno das instâncias dev/test.
+- **ci.yml:** roda em todo push/PR que toque `app/` — job `test` (Postgres de serviço,
+  migration, `jest`), job `security` (`npm audit` + Trivy scan de filesystem), job
+  `build-and-push` (build multi-stage e push pro GHCR com tag `<sha>` e `latest`, só em
+  push na `main`, dependente dos dois jobs anteriores).
+- **cd.yml:** disparado automaticamente via `workflow_run` quando o CI termina com sucesso
+  na `main` (ou manualmente via `workflow_dispatch`). Roda o playbook Ansible do próprio
+  runner do GitHub Actions contra o host, via `aws_ssm`, puxando a imagem publicada pelo CI.
+- Credenciais AWS via GitHub Secrets (mesmo usuário IAM do Terraform) — trade-off aceito
+  documentado em `DECISOES.md`.
 
 ## 6. Diferenças por ambiente
 
 | | dev | test | prod |
 |---|---|---|---|
-| instância | t3.micro | t3.micro | t3.small |
-| gatilho | push `develop` (auto) | manual/tag | push `main` (gate manual) |
+| instância | t3.micro | t3.micro (planejado) | t3.small (planejado) |
+| gatilho | push `main` (auto) | manual | push `main` (gate manual — não construído) |
 | log level | debug | info | warn |
 | banco | Postgres container | container + volume | `use_rds=true` (RDS) |
-| smoke-test | sim | sim | sim + rollback obrigatório |
+| status | provisionado e validado | não provisionado | não provisionado |
 
 ## 7. Segurança
 
-- SSM Session Manager (sem SSH, sem porta 22, sem key distribuída).
-- Secrets em SSM Parameter Store, IAM least privilege (instância só lê seus próprios params).
-- OIDC GitHub↔AWS no pipeline (sem access key estática em secret).
-- Rede: só nginx exposto; API e DB em subnet privada; SG mínimo.
+- SSM Session Manager (sem SSH, sem porta 22, sem chave distribuída) tanto no
+  provisionamento quanto na configuração/deploy.
+- Secrets em SSM Parameter Store, IAM least privilege (a instância só lê seus próprios
+  parâmetros, escopados por ambiente).
+- Rede: só nginx exposto; API, banco e observabilidade só na rede interna do Docker.
 - Imagem Docker: multi-stage, non-root, mínima; scan Trivy no CI.
-- IaC scan Checkov no CI.
-- Container/API scan também disponível via Snyk (uso alinhado à política de segurança).
+- Credenciais AWS do pipeline via GitHub Secrets (usuário IAM dedicado do Terraform) —
+  OIDC é evolução natural, não implementada nesta entrega.
 
 ## 8. Estratégia de testes
 
 - **Unit/integração da API:** jest + supertest — rotas, validação, erros, round-trip DB
   (Postgres efêmero via service container no CI).
-- **IaC:** `terraform validate` + `checkov`.
-- **Config:** `ansible-lint` + `--check` (dry-run) no CI.
-- **Smoke (pós-deploy):** `curl /health` + criar e listar um comentário real no ambiente alvo.
-- **Alertas:** ciclo Inactive→Pending→Firing validado gerando erro na API (herdado do método do lab).
+- **Segurança:** `npm audit` (dependências) + Trivy (filesystem) no CI.
+- **Validação pós-deploy:** health check e round-trip real de comentário via `curl` no
+  ambiente alvo (manual hoje; automatizar como smoke-test de pipeline é evolução).
+- **Alertas:** ciclo `inactive → pending → firing → resolved` validado provocando uma falha
+  real na API (queda proposital do Postgres) e observando o Alertmanager reagir.
 
-## 9. Fora de escopo (YAGNI para o challenge)
+## 9. Fora de escopo (decisão consciente)
 
 - ASG/ALB/ECS/EKS — descritos como evolução, não construídos.
 - HTTPS/ACM — nginx em HTTP; TLS citado na evolução.
-- Autenticação de usuários da API — o enunciado não pede.
+- Autenticação de usuários da API — fora do escopo do serviço de referência.
 - Amazon Managed Prometheus/Grafana — evolução opcional.
+- Ambientes `test`/`prod` provisionados na AWS — só `dev` está no ar (disciplina de custo).
+- Gate manual de aprovação em prod e rollback automático — desenhados, não construídos.
+- Scan de IaC (Checkov) e OIDC no pipeline — evolução natural do CI/CD atual.
 
 ## 10. Riscos e mitigações
 
 | Risco | Mitigação |
 |---|---|
-| Custo esquecido ligado | destroy.yml + auto-stop agendado + disciplina Stop |
-| SPOF (1 host) | aceito no challenge; evolução ASG+ALB diagramada e defendida |
+| Custo esquecido ligado | disciplina manual de `terraform destroy` ao fim de cada sessão de trabalho |
+| SPOF (1 host) | aceito nesta entrega; evolução ASG+ALB diagramada e defendida |
 | Perda de dados (container DB) | volume nomeado; prod via RDS toggle |
-| Deploy quebra prod | gate manual + smoke-test + rollback automático |
-| Créditos burst t3.micro | swap idempotente (lição do lab) |
+| Deploy quebra o ambiente | validação pós-deploy manual; gate + rollback automático ficam na evolução |
+| Falha de conexão do banco derruba a API | tratada em código (listener de erro no pool + timeout de conexão), validada provocando a falha de propósito |
