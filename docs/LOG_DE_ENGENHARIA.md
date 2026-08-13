@@ -19,7 +19,7 @@ Decisão: criar `ControlNode` (estação de controle dedicada) separada do lab a
 **Specs escolhidas:** AlmaLinux 9, 2 vCPU, 4GB RAM, 30GB disco.
 - AlmaLinux = mesma família do RHEL, terreno que você já domina (RHCE), e combina com Amazon Linux (RHEL-like) que será o alvo na AWS — menos atrito de sintaxe entre estação de controle e servidor remoto.
 - 4GB RAM porque a stack de observabilidade completa (Prometheus+Grafana+Loki+Alertmanager) roda local antes de ir pra nuvem.
-- 30GB disco — lição aprendida no lab anterior: build de imagens Docker esgota disco pequeno rápido.
+- 30GB disco — build de imagens Docker esgota disco pequeno rápido; dimensionado com folga desde o início.
 
 ### 0.2 — Instalação mínima (Server minimal)
 
@@ -220,7 +220,7 @@ healthcheck do compose (Fase 2), futuro target-group de load balancer (evoluçã
 
 ### 1.7 — `src/routes/comments.js` — core da API
 
-Rotas exatas do enunciado: `POST /api/comment/new`, `GET /api/comment/list/:content_id`.
+Rotas da API: `POST /api/comment/new`, `GET /api/comment/list/:content_id`.
 
 - Validação em camada antes do banco: email (regex), comment não-vazio, content_id inteiro positivo → `400` claro.
 - **Queries parametrizadas** (`$1, $2, $3`) — defesa contra SQL injection; nunca concatenar string de usuário na query.
@@ -365,7 +365,7 @@ nginx como reverse proxy (`proxy_pass http://api:5000` — de novo, nome do serv
 repassando headers reais (`X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto`) — sem isso a API
 veria toda requisição como vinda do próprio nginx.
 
-**Validado:** `docker compose up -d` — todos os 4 serviços saudáveis, fluxo completo do enunciado
+**Validado:** `docker compose up -d` — todos os 4 serviços saudáveis, fluxo completo da API
 testado **através do nginx** (porta 80, não mais direto na API): `POST /api/comment/new` → `201`,
 `GET /api/comment/list/1` → lista persistida, `GET /health` → `200` confirmando nginx→API→Postgres.
 
@@ -385,8 +385,8 @@ testado **através do nginx** (porta 80, não mais direto na API): `POST /api/co
 todos referenciados pelo **nome do serviço** no compose (`api:5000`, `node_exporter:9100`), resolvido
 via DNS interno do Docker — mesmo princípio usado em toda a stack desde a Fase 2.
 
-`observability/prometheus/alert-rules.yml` — 4 regras: `NodeExporterDown`, `MemoriaAlta` (herdadas
-do lab anterior, já validadas lá), `APIDown` (equivalente pro job da API) e `TaxaErroAlta`:
+`observability/prometheus/alert-rules.yml` — 4 regras: `NodeExporterDown`, `MemoriaAlta` (regras de infraestrutura
+padrão, já validadas em iteração anterior deste projeto), `APIDown` (equivalente pro job da API) e `TaxaErroAlta`:
 
 ```promql
 sum(rate(http_requests_total{job="comments-api", status_code=~"5.."}[5m]))
@@ -402,10 +402,10 @@ de labels (lição já documentada no lab de observabilidade original).
 Config mínima (`resolve_timeout: 5m`, receiver vazio) — alertas visíveis na UI; webhook
 Discord/Slack fica como próximo passo, não implementado no escopo desta entrega.
 
-### 3.3 — Promtail: mudança de estratégia vs. o lab anterior
+### 3.3 — Promtail: adaptação da estratégia de coleta de logs
 
-No lab AWS, o Promtail lia arquivos de log do host (`/var/log/{messages,secure,...}`) porque a
-aplicação rodava direto na instância via systemd — exigiu build customizado com suporte a journal
+Em uma configuração baseada em logs de host, o Promtail leria arquivos de log da instância
+(`/var/log/{messages,secure,...}`), o que exigiria build customizado com suporte a journal
 (limitação conhecida da imagem oficial). **Aqui o contexto é diferente**: tudo roda em containers
 Docker, então a fonte correta é o **socket do Docker** (`docker_sd_configs` + `unix:///var/run/docker.sock`),
 que descobre containers automaticamente e captura stdout/stderr de cada um. Não existe mais a
@@ -415,10 +415,10 @@ o modelo de coleta é outro. **Não precisamos do build customizado do Promtail 
 `relabel_configs` extrai o nome do container como label `container`, pra filtrar por serviço
 no Grafana/Loki.
 
-### 3.4 — Grafana provisionado via YAML (fecha o gap do lab anterior)
+### 3.4 — Grafana provisionado via YAML (zero configuração manual)
 
-No lab anterior, datasources e dashboard eram configurados **clicando na UI** — repetível a cada
-vez que uma instância nova subia. Aqui, dois arquivos YAML resolvem isso permanentemente:
+Configurar datasources e dashboard **clicando na UI** não escala — seria repetido a cada vez
+que uma instância nova sobe. Aqui, dois arquivos YAML resolvem isso permanentemente:
 
 - `provisioning/datasources/datasources.yml` — Prometheus + Loki, `access: proxy` (o servidor
   Grafana fala com eles, não o browser do usuário — não expõe Prometheus/Loki diretamente),
@@ -478,7 +478,7 @@ com banco fora do ar termina rápido, loga o erro, **não derruba o container**.
 
 ### 3.7 — Ciclo completo de alerta validado (`inactive → pending → firing → resolved`)
 
-Repetindo o método do lab anterior, mas agora contra a API real (não infraestrutura sintética):
+Validação do ciclo completo de alerta, provocando uma falha real (não infraestrutura sintética):
 
 1. `docker stop compose-postgres-1` + 20 requisições → todas retornam 500 (com o fix aplicado,
    sem travar nem derrubar a API).
@@ -600,8 +600,8 @@ se espera, não só rodar `apply` cegamente.
 **AMI exige disco maior:** `terraform apply` falhou na criação da instância —
 `InvalidBlockDeviceMapping: Volume of size 20GB is smaller than snapshot ..., expect size
 >= 30GB`. A AMI mais recente do Amazon Linux 2023 mudou o tamanho do snapshot-base desde
-que o spec original previu 20GB (mesmo valor usado no lab anterior, mas para volume raiz
-mínimo, não para builds locais). Corrigido para `volume_size = 30` — ainda dentro do free
+que o spec original previu 20GB — valor pensado pro volume raiz mínimo, não pra builds
+locais de imagem, que consomem bem mais espaço. Corrigido para `volume_size = 30` — ainda dentro do free
 tier de EBS (30GB grátis/mês). Terraform aplicou de forma incremental: como os outros 16
 recursos já existiam no state, só a instância entrou no segundo `apply`.
 
