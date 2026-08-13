@@ -1,5 +1,8 @@
 # Comments API — AWS + Observability
 
+[![CI](https://github.com/roger-macedo-dev/comments-api-aws-observability/actions/workflows/ci.yml/badge.svg)](https://github.com/roger-macedo-dev/comments-api-aws-observability/actions/workflows/ci.yml)
+[![CD](https://github.com/roger-macedo-dev/comments-api-aws-observability/actions/workflows/cd.yml/badge.svg)](https://github.com/roger-macedo-dev/comments-api-aws-observability/actions/workflows/cd.yml)
+
 API REST de comentários com infraestrutura como código, containerização e stack de
 observabilidade completa. Comentários são associados a um `content_id` (matéria/conteúdo);
 a API permite inserção e listagem cronológica por conteúdo.
@@ -8,7 +11,8 @@ a API permite inserção e listagem cronológica por conteúdo.
 
 ```
 GitHub ─┐
-         │  (CI/CD: GitHub Actions)
+         │  CI: testes + segurança (npm audit, Trivy) + build/push (GHCR)
+         │  CD: deploy automático em dev via Ansible (aws_ssm)
          ▼
 AWS · VPC (subnet pública única)
   EC2 (Amazon Linux 2023, sem SSH — acesso via IAM/SSM Session Manager)
@@ -38,6 +42,8 @@ auditado por IAM.
 | Banco de dados | PostgreSQL 16 |
 | Containerização | Docker (multi-stage, non-root) + Docker Compose |
 | Infraestrutura | Terraform (VPC, EC2, IAM, Security Group, SSM) |
+| Configuração | Ansible (`aws_ssm`, zero SSH) |
+| CI/CD | GitHub Actions (testes, segurança, build/push GHCR, deploy) |
 | Observabilidade | Prometheus, Grafana, Loki, Grafana Alloy, Alertmanager |
 | Testes | Jest + Supertest |
 
@@ -109,6 +115,19 @@ terraform apply -var-file=envs/dev.tfvars
 Segredos (credenciais de banco, senha do Grafana) são gerados automaticamente pelo
 Terraform e armazenados como `SecureString` no SSM Parameter Store — nunca em texto
 plano no código ou no host.
+
+## Configuração e deploy
+
+Configuração do host e deploy da stack via Ansible, usando o plugin de conexão `aws_ssm`
+(sem SSH em nenhum momento — mesmo caminho de acesso do provisionamento):
+
+```bash
+cd ansible
+ansible-playbook -i inventory/dev.aws_ec2.yml site.yml
+```
+
+Em produção esse mesmo playbook roda automaticamente via GitHub Actions (`cd.yml`) a
+cada push bem-sucedido na `main`, puxando a imagem recém-publicada no GHCR.
 
 ## Documentação
 
