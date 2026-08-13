@@ -122,6 +122,6 @@ plano no código ou no host.
 - [x] Containerização (Docker multi-stage, non-root)
 - [x] Stack de observabilidade provisionada como código
 - [x] Infraestrutura AWS via Terraform (rede, EC2, IAM, SSM)
-- [ ] Configuração automatizada do host via Ansible
+- [x] Configuração automatizada do host via Ansible (aws_ssm, zero SSH)
 - [ ] Pipeline de CI/CD (build, testes, segurança, deploy)
 - [ ] Deploy automatizado com smoke test e rollback

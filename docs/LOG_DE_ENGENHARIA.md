@@ -674,3 +674,31 @@ container nginx, que tem por ser Alpine).
 **Lição:** parte da defesa de uma solução "atual" é verificar isso de fato, não assumir
 que o que funcionava há alguns meses continua sendo a escolha certa — checar a
 atualidade das ferramentas antes de fechar cada fase, não só no final.
+
+## Fase 5 — Configuração via Ansible (aws_ssm)
+
+**Objetivo:** configurar o host EC2 (Docker + stack da aplicação) sem SSH, mantendo o mesmo modelo de acesso administrativo usado no provisionamento (SSM Session Manager).
+
+### Inventario dinamico
+
+Plugin amazon.aws.aws_ec2, filtrando por tag Name=comments-api-dev e instance-state-name=running. O bloco compose injeta as variaveis de conexao em cada host descoberto (ansible_host, ansible_connection, bucket S3 e regiao pro plugin aws_ssm).
+
+Detalhe que custou uma iteracao: sem ansible_host: instance_id, o Ansible tenta conectar pelo hostname DNS publico da instancia -- o plugin aws_ssm espera o instance ID, nao um hostname. Corrigido explicitando o mapeamento.
+
+O plugin aws_ssm usa um bucket S3 como intermediario de transferencia de arquivos (reaproveitado o bucket de state do Terraform). Testado com ansible all -i inventory/dev.aws_ec2.yml -m ping, retorno pong.
+
+### Role docker
+
+Instala Docker CE via dnf e o Docker Compose plugin via download direto do binario oficial (GitHub Releases) -- docker-compose-plugin nao esta disponivel como pacote no Amazon Linux 2023 (mesmo padrao ja usado para session-manager-plugin e AWS CLI v2: sem RPM oficial, binario direto).
+
+### Role deploy
+
+Copia compose/ e observability/ para o host, renderiza .env a partir de segredos lidos diretamente do SSM Parameter Store via lookup plugin (amazon.aws.aws_ssm, decrypt=True) -- nunca digitados manualmente. A imagem da API e buildada localmente no control-node (o t3.micro do host e fraco demais pra npm ci + build sem risco de thrashing de memoria), exportada com docker save, copiada para o host via modulo copy (mesmo canal SSM/S3) e carregada com docker load. Por fim, docker compose up -d.
+
+### Validacao end-to-end na AWS real
+
+Health check, criacao e listagem de comentario via curl direto no IP publico da instancia. 9 containers confirmados Up via docker ps dentro de uma sessao SSM (api e postgres healthy). Todo o ciclo -- provisionamento (Terraform) e configuracao (Ansible) -- fechado sem nenhuma chave SSH em nenhum momento.
+
+### Pendencias conscientes
+
+- Warnings amazon.aws/community.aws nao suportam ansible-core 2.14.18: cosmeticos por ora (tudo funcional), resolver antes do fechamento do projeto.
