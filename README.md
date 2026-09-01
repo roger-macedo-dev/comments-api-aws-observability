@@ -99,7 +99,14 @@ via código (`observability/grafana/provisioning/`) — nenhuma configuração m
 
 Alertas ativos: indisponibilidade de nodo (`NodeExporterDown`), memória alta
 (`MemoriaAlta`), API fora do ar (`APIDown`) e taxa de erro elevada (`TaxaErroAlta`,
-baseada nas métricas HTTP da própria API).
+baseada nas métricas HTTP da própria API) — todos **reativos** (disparam quando o
+problema já está acontecendo).
+
+Além desses, um alerta **preditivo** (`MemoriaVaiEstourarPrevisao`) usa `predict_linear`
+para extrapolar a tendência de uso de memória dos últimos 30min e avisar com ~1h de
+antecedência se o consumo vai ultrapassar 90%, antes do problema se manifestar —
+mesmo princípio usado por ferramentas comerciais de análise preditiva de capacidade
+(ex: VMware Aria Operations), aqui implementado só com Prometheus nativo.
 
 ## Infraestrutura
 

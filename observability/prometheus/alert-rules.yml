@@ -18,7 +18,14 @@ groups:
         annotations:
           summary: "Memória acima de 80%"
           description: "Uso de memória em {{ $labels.instance }}: {{ $value | humanize }}%."
-
+      - alert: MemoriaVaiEstourarPrevisao
+        expr: predict_linear((1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))[30m:1m], 3600) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Previsão: memória vai passar de 90% em 1h"
+          description: "Com base na tendência dos últimos 30min, {{ $labels.instance }} deve atingir {{ $value | humanize }}% de uso de memória em ~1h, se nada mudar."
   - name: app
     rules:
       - alert: APIDown

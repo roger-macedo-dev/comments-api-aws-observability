@@ -737,3 +737,30 @@ Validado end-to-end: push que mexeu em ci.yml disparou CI (rodou limpo) que disp
 ### Escopo consciente: prod
 
 So o ambiente dev existe provisionado na AWS (decisao de custo). O gate manual de prod (decisao #6 do DECISOES.md) fica documentado como caminho de evolucao -- nao foi construido um ambiente prod fake so pra demonstrar o mecanismo de approval do GitHub Environments.
+
+## Fase 8 — Alertas preditivos (predict_linear)
+
+Alertas existentes ate a Fase 7 eram todos reativos -- disparam quando o problema ja
+esta acontecendo (CPU/memoria acima de limiar, servico fora do ar). Adicionado um
+alerta preditivo (MemoriaVaiEstourarPrevisao) usando a funcao nativa predict_linear do
+PromQL: extrapola a tendencia de uso de memoria dos ultimos 30min (via subquery
+`[30m:1m]`) e projeta 1h a frente, avisando antes do consumo ultrapassar 90%, nao
+depois.
+
+Retomada do ambiente (destruido apos a Fase 7 por decisao de custo) expos dois bugs
+reais, corrigidos na sequencia:
+
+- AMI selecionada pelo Terraform (`al2023-ami-*-x86_64`, most_recent=true) passou a
+  casar com a variante Minimal do Amazon Linux 2023, que nao vem com o SSM Agent
+  pre-instalado -- instancia subia saudavel (status checks ok) mas nunca aparecia em
+  `aws ssm describe-instance-information`, deixando o Ansible (aws_ssm) sem conseguir
+  conectar. Corrigido restringindo o filtro pra `al2023-ami-2023.*-kernel-*-x86_64`,
+  que exclui a variante minimal pelo padrao do nome.
+- Apos editar `alert-rules.yml` e reexecutar o Ansible, o Prometheus nao recarregou a
+  regra nova -- `docker compose up -d` nao detecta mudanca em arquivo montado por
+  volume (so compara definicao/imagem do servico, nao conteudo de bind mount).
+  Resolvido com restart explicito do container (`docker compose restart prometheus`)
+  via SSM, sem precisar reiniciar a stack inteira.
+
+Validado via API do proprio Prometheus (`/api/v1/rules`) apos o restart -- regra nova
+presente e avaliando normalmente.

@@ -24,6 +24,7 @@ pipeline de deploy automatizados, em três ambientes (dev/test/prod), na AWS.
 | 9 | Banco em prod: **toggle RDS** (`use_rds`) | sempre container / sempre RDS | Ambientes de baixo custo usam container; produção usa serviço gerenciado (backup, Multi-AZ) via flag de configuração — 12-factor |
 | 10 | State do Terraform: **S3 com lock nativo** (`use_lockfile`) | state local, lock via DynamoDB | Colaboração segura, lock contra execução concorrente sem depender de tabela separada; método atual recomendado pelo Terraform (DynamoDB lock foi depreciado) |
 | 11 | Coleta de logs: **Grafana Alloy** | Promtail | Promtail atingiu EOL em 03/2026 (sem mais suporte oficial); Alloy é o coletor atual recomendado pelo Grafana Labs |
+| 12 | Alertas preditivos: **predict_linear (Prometheus nativo)** | ML externo (Prophet/PyOD) | Extrapolação de tendência resolve o caso de uso sem infraestrutura adicional; ML dedicado seria overengineering pro escopo atual |
 
 ## Caminho de evolução (fora do escopo desta entrega)
 
