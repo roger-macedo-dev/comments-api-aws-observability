@@ -1,0 +1,10 @@
+---
+# Collections exigidas pelo playbook. Instalar com:
+#   ansible-galaxy collection install -r ansible/requirements.yml
+collections:
+  # Inventario dinamico (aws_ec2) e lookup do SSM Parameter Store.
+  - name: amazon.aws
+    version: ">=7.6.1"
+  # Plugin de conexao aws_ssm — substitui SSH, que nao existe neste projeto.
+  - name: community.aws
+    version: ">=7.2.0"
