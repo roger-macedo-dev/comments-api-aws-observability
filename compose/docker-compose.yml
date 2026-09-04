@@ -56,6 +56,17 @@ services:
   node_exporter:
     image: prom/node-exporter:v1.8.2
     restart: unless-stopped
+    # Sem montar o sistema de arquivos do host, o exporter mede o proprio
+    # container: reportaria uso de disco e de memoria que nao correspondem a
+    # maquina que se quer monitorar.
+    command:
+      - '--path.rootfs=/host'
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(host/)?(sys|proc|dev|run|var/lib/docker)($$|/)'
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
     networks:
       - backend
 
@@ -100,6 +111,20 @@ services:
       - /etc/alloy/config.alloy
       - --server.http.listen-addr=0.0.0.0:12345
       - --storage.path=/var/lib/alloy/data
+    networks:
+      - backend
+
+  # Exporta metricas do Postgres para o Prometheus. Sem ele, o banco e um ponto
+  # cego: a API pode responder bem enquanto o banco acumula conexoes, deadlocks
+  # ou perde eficiencia de cache.
+  postgres_exporter:
+    image: prometheuscommunity/postgres-exporter:v0.16.0
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - backend
 
