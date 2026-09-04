@@ -41,7 +41,17 @@ jobs:
       - name: Instala Ansible e collections AWS
         run: |
           pip install ansible-core==2.15.13 boto3 botocore
-          ansible-galaxy collection install 'amazon.aws:<8.0.0' 'community.aws:<8.0.0'
+          # Galaxy derruba conexao com alguma frequencia. Sem nova tentativa,
+          # uma instabilidade de terceiro reprova um deploy que esta correto.
+          for tentativa in 1 2 3; do
+            if ansible-galaxy collection install -r ansible/requirements.yml; then
+              exit 0
+            fi
+            echo "Tentativa ${tentativa} falhou ao baixar as collections. Nova tentativa em 15s..."
+            sleep 15
+          done
+          echo "Nao foi possivel instalar as collections apos 3 tentativas."
+          exit 1
 
       - name: Instala session-manager-plugin
         run: |
