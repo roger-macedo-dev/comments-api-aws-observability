@@ -145,7 +145,7 @@ produção não divirja do caminho já exercitado em dev. O que muda é a config
 |---|---|---|
 | Disparo | automático, a cada CI verde na `main` | manual, com ambiente escolhido |
 | Aprovação | não exige | revisor obrigatório no Environment |
-| Credencial do pipeline | usuário IAM restrito a `dev` | usuário IAM restrito a `prod` |
+| Credencial do pipeline | role assumida via OIDC, restrita a `dev` | role assumida via OIDC, restrita a `prod` |
 | Segredos | `/comments-api/dev/*` | `/comments-api/prod/*` |
 
 O gate não está no YAML — está na regra de proteção do Environment, na configuração
@@ -194,4 +194,4 @@ gh workflow run cd.yml -f image_tag=<sha>
 - [x] Deploy automático em dev via CI/CD (Ansible/aws_ssm, pull do GHCR)
 - [x] Smoke test end-to-end com rollback automático para a versão anterior
 - [x] Gate manual de aprovação para produção (Environment com revisor obrigatório)
-- [ ] OIDC no lugar de chave de acesso estática no pipeline
+- [x] OIDC no lugar de chave de acesso estática no pipeline

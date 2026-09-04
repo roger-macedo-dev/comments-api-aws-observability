@@ -26,7 +26,7 @@ pipeline de deploy automatizados, em três ambientes (dev/test/prod), na AWS.
 | 11 | Coleta de logs: **Grafana Alloy** | Promtail | Promtail atingiu EOL em 03/2026 (sem mais suporte oficial); Alloy é o coletor atual recomendado pelo Grafana Labs |
 | 12 | Alertas preditivos: **predict_linear (Prometheus nativo)** | ML externo (Prophet/PyOD) | Extrapolação de tendência resolve o caso de uso sem infraestrutura adicional; ML dedicado seria overengineering pro escopo atual |
 | 12 | Verificação de deploy: **smoke test com rollback automático** | confiar no código de saída do `compose up` | Container que sobe e morre em seguida daria falso positivo; o rollback devolve a versão anterior sem intervenção manual |
-| 13 | Credencial do pipeline: **usuário IAM dedicado, permissão mínima** | chave da conta principal | O runner só descobre a instância, abre sessão SSM, lê os segredos do próprio ambiente e usa o bucket de transferência. Evolução registrada: OIDC, eliminando a chave de longa duração |
+| 13 | Credencial do pipeline: **OIDC com role por ambiente** | chave de acesso estática nos secrets | O runner apresenta um token assinado pelo GitHub e recebe credenciais temporárias; não há segredo de longa duração em lugar nenhum. A política de confiança fixa os identificadores numéricos do dono e do repositório, imunes a renomeação, e o Environment do job — a role de dev não pode ser assumida por um job de prod |
 
 ## Caminho de evolução (fora do escopo desta entrega)
 
