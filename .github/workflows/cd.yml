@@ -63,6 +63,11 @@ jobs:
           echo "ip=${IP}" >> "$GITHUB_OUTPUT"
 
       - name: Deploy via Ansible (aws_ssm)
+        id: deploy
+        # Falha aqui nao pode abortar o job: imagem inexistente ou playbook com
+        # erro precisam chegar ao passo de rollback, nao derrubar o pipeline
+        # deixando o ambiente no meio do caminho.
+        continue-on-error: true
         working-directory: ansible
         run: |
           ansible-playbook -i inventory/dev.aws_ec2.yml site.yml --tags deploy \
@@ -70,6 +75,7 @@ jobs:
 
       - name: Smoke test
         id: smoke
+        if: steps.deploy.outcome == 'success'
         continue-on-error: true
         run: |
           # Exercita o caminho completo: nginx, aplicacao e banco. Container que
@@ -90,7 +96,7 @@ jobs:
           exit 1
 
       - name: Rollback para a imagem anterior
-        if: steps.smoke.outcome == 'failure' && steps.imagens.outputs.anterior != ''
+        if: (steps.deploy.outcome == 'failure' || steps.smoke.outcome != 'success') && steps.imagens.outputs.anterior != ''
         working-directory: ansible
         run: |
           echo "Deploy falhou. Voltando para ${{ steps.imagens.outputs.anterior }}"
@@ -107,13 +113,13 @@ jobs:
           exit 1
 
       - name: Registra a imagem implantada
-        if: steps.smoke.outcome == 'success'
+        if: steps.deploy.outcome == 'success' && steps.smoke.outcome == 'success'
         run: |
           aws ssm put-parameter --name /comments-api/dev/imagem_atual \
             --value "${{ steps.imagens.outputs.nova }}" --type String --overwrite
 
       - name: Falha o job se o deploy nao passou no smoke test
-        if: steps.smoke.outcome == 'failure'
+        if: steps.deploy.outcome == 'failure' || steps.smoke.outcome != 'success'
         run: |
           echo "Deploy rejeitado pelo smoke test."
           exit 1
