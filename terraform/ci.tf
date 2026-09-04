@@ -41,6 +41,14 @@ data "aws_iam_policy_document" "ci" {
     resources = ["arn:aws:ssm:${var.region}:*:parameter/comments-api/${var.environment}/*"]
   }
 
+  # Registra qual imagem esta implantada, para o rollback saber a que voltar.
+  # O estado do deploy vive fora do host: se a instancia for recriada, a
+  # informacao sobrevive.
+  statement {
+    actions   = ["ssm:PutParameter"]
+    resources = ["arn:aws:ssm:${var.region}:*:parameter/comments-api/${var.environment}/imagem_atual"]
+  }
+
   statement {
     actions   = ["kms:Decrypt"]
     resources = ["*"]
