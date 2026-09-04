@@ -51,7 +51,12 @@ variable "repositorio_github" {
 }
 
 variable "criar_provedor_oidc" {
-  description = "O provedor OIDC e unico por conta AWS; criar em apenas um workspace"
+  description = <<-TEXTO
+    O provedor OIDC e unico por conta AWS e deve ser criado por um unico
+    workspace. Consequencia operacional: o workspace que o cria precisa ser o
+    primeiro a subir e o ultimo a ser destruido — hoje, dev. Para operar apenas
+    prod, ligue esta flag no tfvars de prod.
+  TEXTO
   type        = bool
   default     = false
 }

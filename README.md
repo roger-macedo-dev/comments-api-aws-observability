@@ -135,6 +135,15 @@ Segredos (credenciais de banco, senha do Grafana) são gerados automaticamente p
 Terraform e armazenados como `SecureString` no SSM Parameter Store — nunca em texto
 plano no código ou no host.
 
+**Ordem de criação.** O provedor OIDC é único por conta AWS e é criado pelo workspace
+que tiver `criar_provedor_oidc = true` — hoje, `dev`. Portanto: suba `dev` antes de
+`prod`. Se for subir apenas `prod`, ligue a flag no `envs/prod.tfvars`, senão a role
+apontará para um provedor inexistente e o pipeline falhará com `AccessDenied` em
+`sts:AssumeRoleWithWebIdentity` — erro que não menciona o provedor.
+
+Vale como regra: **dev sobe primeiro, prod é destruído primeiro.** A dependência é a
+mesma nos dois sentidos, e a ordem se inverte.
+
 ## Configuração e deploy
 
 Configuração do host e deploy da stack via Ansible, usando o plugin de conexão `aws_ssm`
