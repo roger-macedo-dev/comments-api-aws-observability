@@ -1,2 +1,6 @@
 ---
 api_image: "comments-api:local"
+# Ambiente alvo. Define de qual prefixo do Parameter Store vem cada segredo —
+# implantar em prod com este valor errado leria as credenciais de outro ambiente.
+ambiente: "dev"
+regiao: "us-east-2"

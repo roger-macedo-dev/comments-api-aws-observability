@@ -7,38 +7,25 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      ambiente:
+        description: 'Ambiente alvo'
+        required: true
+        default: dev
+        type: choice
+        options: [dev, prod]
       image_tag:
-        description: 'Tag da imagem a implantar (SHA do commit). Vazio = latest.'
+        description: 'Tag da imagem (SHA do commit). Vazio = latest.'
         required: false
 
 jobs:
-  deploy-dev:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+  # Define uma unica vez qual imagem sera implantada, para dev e prod
+  # receberem exatamente o mesmo artefato.
+  imagem:
     runs-on: ubuntu-latest
-    environment: dev
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_DEFAULT_REGION: us-east-2
+    outputs:
+      tag: ${{ steps.calc.outputs.tag }}
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.11'
-
-      - name: Instala Ansible e collections AWS
-        run: |
-          pip install ansible-core==2.15.13 boto3 botocore
-          ansible-galaxy collection install 'amazon.aws:<8.0.0' 'community.aws:<8.0.0'
-
-      - name: Instala session-manager-plugin
-        run: |
-          curl -sSL "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb" -o /tmp/smp.deb
-          sudo dpkg -i /tmp/smp.deb
-
-      - name: Define imagem alvo e imagem anterior
-        id: imagens
+      - id: calc
         run: |
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
             TAG="${{ github.event.workflow_run.head_sha }}"
@@ -46,80 +33,28 @@ jobs:
             TAG="${{ inputs.image_tag }}"
             TAG="${TAG:-latest}"
           fi
-          echo "nova=ghcr.io/${{ github.repository_owner }}/comments-api:${TAG}" >> "$GITHUB_OUTPUT"
-          # Imagem hoje em producao, registrada pelo deploy anterior. Ausente no
-          # primeiro deploy — nesse caso nao ha para onde voltar.
-          ANTERIOR=$(aws ssm get-parameter --name /comments-api/dev/imagem_atual \
-            --query Parameter.Value --output text 2>/dev/null || echo "")
-          echo "anterior=${ANTERIOR}" >> "$GITHUB_OUTPUT"
-          echo "Nova: ${TAG} | Anterior: ${ANTERIOR:-nenhuma}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
-      - name: Descobre o IP publico da instancia
-        id: host
-        run: |
-          IP=$(aws ec2 describe-instances \
-            --filters "Name=tag:Name,Values=comments-api-dev" "Name=instance-state-name,Values=running" \
-            --query "Reservations[].Instances[].PublicIpAddress" --output text)
-          echo "ip=${IP}" >> "$GITHUB_OUTPUT"
+  dev:
+    needs: imagem
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' || (github.event_name == 'workflow_dispatch' && inputs.ambiente == 'dev')
+    uses: ./.github/workflows/deploy.yml
+    with:
+      ambiente: dev
+      image_tag: ${{ needs.imagem.outputs.tag }}
+    secrets:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      - name: Deploy via Ansible (aws_ssm)
-        id: deploy
-        # Falha aqui nao pode abortar o job: imagem inexistente ou playbook com
-        # erro precisam chegar ao passo de rollback, nao derrubar o pipeline
-        # deixando o ambiente no meio do caminho.
-        continue-on-error: true
-        working-directory: ansible
-        run: |
-          ansible-playbook -i inventory/dev.aws_ec2.yml site.yml --tags deploy \
-            -e "api_image=${{ steps.imagens.outputs.nova }}"
-
-      - name: Smoke test
-        id: smoke
-        if: steps.deploy.outcome == 'success'
-        continue-on-error: true
-        run: |
-          # Exercita o caminho completo: nginx, aplicacao e banco. Container que
-          # sobe e morre em seguida passaria despercebido sem esta verificacao.
-          for i in $(seq 1 12); do
-            if curl -fsS --max-time 5 "http://${{ steps.host.outputs.ip }}/health" | grep -q '"db":"up"'; then
-              curl -fsS --max-time 5 -X POST "http://${{ steps.host.outputs.ip }}/api/comment/new" \
-                -H 'Content-Type: application/json' \
-                -d '{"email":"smoke@ci.local","comment":"smoke test","content_id":999}' > /dev/null
-              curl -fsS --max-time 5 "http://${{ steps.host.outputs.ip }}/api/comment/list/999" | grep -q "smoke test"
-              echo "Smoke test passou na tentativa ${i}."
-              exit 0
-            fi
-            echo "Tentativa ${i}: aplicacao ainda nao respondeu. Aguardando..."
-            sleep 5
-          done
-          echo "Smoke test falhou apos 12 tentativas."
-          exit 1
-
-      - name: Rollback para a imagem anterior
-        if: (steps.deploy.outcome == 'failure' || steps.smoke.outcome != 'success') && steps.imagens.outputs.anterior != ''
-        working-directory: ansible
-        run: |
-          echo "Deploy falhou. Voltando para ${{ steps.imagens.outputs.anterior }}"
-          ansible-playbook -i inventory/dev.aws_ec2.yml site.yml --tags deploy \
-            -e "api_image=${{ steps.imagens.outputs.anterior }}"
-          for i in $(seq 1 12); do
-            if curl -fsS --max-time 5 "http://${{ steps.host.outputs.ip }}/health" | grep -q '"db":"up"'; then
-              echo "Rollback concluido, aplicacao saudavel na versao anterior."
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "Rollback executado mas a aplicacao segue fora do ar."
-          exit 1
-
-      - name: Registra a imagem implantada
-        if: steps.deploy.outcome == 'success' && steps.smoke.outcome == 'success'
-        run: |
-          aws ssm put-parameter --name /comments-api/dev/imagem_atual \
-            --value "${{ steps.imagens.outputs.nova }}" --type String --overwrite
-
-      - name: Falha o job se o deploy nao passou no smoke test
-        if: steps.deploy.outcome == 'failure' || steps.smoke.outcome != 'success'
-        run: |
-          echo "Deploy rejeitado pelo smoke test."
-          exit 1
+  # Producao nunca e automatica: exige disparo explicito e aprovacao humana,
+  # configurada como regra de protecao do Environment.
+  prod:
+    needs: imagem
+    if: github.event_name == 'workflow_dispatch' && inputs.ambiente == 'prod'
+    uses: ./.github/workflows/deploy.yml
+    with:
+      ambiente: prod
+      image_tag: ${{ needs.imagem.outputs.tag }}
+    secrets:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
