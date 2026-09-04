@@ -2,7 +2,12 @@
 
 **Data:** 2026-08-12
 **Autor:** Roger Macedo
-**Status:** Implementado
+**Status:** Implementado — ver seção 11 para o que mudou depois desta data
+
+> Este é um registro datado da decisão original. O texto das seções 1 a 10 foi
+> preservado como estava em 12/08/2026, inclusive onde envelheceu; itens
+> superados estão marcados com **[superado — ver §11]**. A seção 11 descreve o
+> estado atual.
 
 ## 1. Contexto e objetivo
 
@@ -58,7 +63,7 @@ GitHub Actions
 ```
 
 Gate manual de produção e rollback automático estão desenhados (decisão #6) mas não
-construídos — ver seção 9 (fora de escopo).
+construídos — ver seção 9 (fora de escopo). **[superado — ver §11]**
 
 ### 3.2 Topologia AWS (estado da entrega)
 
@@ -198,7 +203,7 @@ script idempotente (`CREATE TABLE IF NOT EXISTS`).
   na `main` (ou manualmente via `workflow_dispatch`). Roda o playbook Ansible do próprio
   runner do GitHub Actions contra o host, via `aws_ssm`, puxando a imagem publicada pelo CI.
 - Credenciais AWS via GitHub Secrets (mesmo usuário IAM do Terraform) — trade-off aceito
-  documentado em `DECISOES.md`.
+  documentado em `DECISOES.md`. **[superado — ver §11]**
 
 ## 6. Diferenças por ambiente
 
@@ -219,7 +224,7 @@ script idempotente (`CREATE TABLE IF NOT EXISTS`).
 - Rede: só nginx exposto; API, banco e observabilidade só na rede interna do Docker.
 - Imagem Docker: multi-stage, non-root, mínima; scan Trivy no CI.
 - Credenciais AWS do pipeline via GitHub Secrets (usuário IAM dedicado do Terraform) —
-  OIDC é evolução natural, não implementada nesta entrega.
+  OIDC é evolução natural, não implementada nesta entrega. **[superado — ver §11]**
 
 ## 8. Estratégia de testes
 
@@ -228,6 +233,7 @@ script idempotente (`CREATE TABLE IF NOT EXISTS`).
 - **Segurança:** `npm audit` (dependências) + Trivy (filesystem) no CI.
 - **Validação pós-deploy:** health check e round-trip real de comentário via `curl` no
   ambiente alvo (manual hoje; automatizar como smoke-test de pipeline é evolução).
+  **[superado — ver §11]**
 - **Alertas:** ciclo `inactive → pending → firing → resolved` validado provocando uma falha
   real na API (queda proposital do Postgres) e observando o Alertmanager reagir.
 
@@ -238,8 +244,11 @@ script idempotente (`CREATE TABLE IF NOT EXISTS`).
 - Autenticação de usuários da API — fora do escopo do serviço de referência.
 - Amazon Managed Prometheus/Grafana — evolução opcional.
 - Ambientes `test`/`prod` provisionados na AWS — só `dev` está no ar (disciplina de custo).
+  **[parcialmente superado — `prod` foi construído e validado, ver §11]**
 - Gate manual de aprovação em prod e rollback automático — desenhados, não construídos.
+  **[superado — ver §11]**
 - Scan de IaC (Checkov) e OIDC no pipeline — evolução natural do CI/CD atual.
+  **[OIDC superado — ver §11; Checkov segue fora de escopo]**
 
 ## 10. Riscos e mitigações
 
@@ -250,3 +259,94 @@ script idempotente (`CREATE TABLE IF NOT EXISTS`).
 | Perda de dados (container DB) | volume nomeado; prod via RDS toggle |
 | Deploy quebra o ambiente | validação pós-deploy manual; gate + rollback automático ficam na evolução |
 | Falha de conexão do banco derruba a API | tratada em código (listener de erro no pool + timeout de conexão), validada provocando a falha de propósito |
+
+## 11. Atualizações posteriores à entrega inicial
+
+**Data desta seção:** 2026-09-04
+
+O design das seções 1 a 10 se manteve. O que mudou foi a fronteira entre
+"desenhado" e "construído": quatro itens listados como evolução foram
+implementados e validados contra infraestrutura real na AWS.
+
+### 11.1 Gate de aprovação em produção
+
+O ambiente `prod` foi provisionado num workspace próprio, com instância, role
+IAM, segredos e inventário separados. O deploy exige disparo explícito e
+aprovação humana.
+
+O gate não vive no YAML, e sim na regra de proteção do GitHub Environment: um
+pull request pode alterar o workflow, não a regra de proteção. Os dois caminhos
+foram exercitados — aprovação (deploy concluído) e recusa (execução encerrada
+sem tocar no ambiente).
+
+### 11.2 Smoke test e rollback automático
+
+A validação pós-deploy deixou de ser manual. O pipeline exercita nginx,
+aplicação e banco antes de considerar o deploy bem-sucedido — o código de saída
+do `compose up` não serve como prova, porque um container que sobe e morre em
+seguida passaria como sucesso.
+
+Falhando a verificação, ou falhando o próprio deploy, a versão anterior é
+reimplantada e o job termina em erro. Deploy revertido não é deploy
+bem-sucedido.
+
+A imagem em produção é registrada no Parameter Store, fora do host: perguntar ao
+próprio host qual versão está rodando funciona até o host deixar de existir, que
+é exatamente quando a resposta importa.
+
+Validado provocando a falha de propósito, com uma tag inexistente.
+
+### 11.3 Workflow reutilizável
+
+O procedimento de deploy passou a ser um workflow reutilizável, chamado por dev
+e por prod. Duas cópias do mesmo procedimento divergem com o tempo, e a cópia
+que diverge costuma ser a de produção — justamente a que menos pode falhar.
+
+Aprendizado registrado: o token de permissões é definido por quem chama. Um
+workflow reutilizável só restringe o que recebeu, nunca amplia. Sem
+`id-token: write` no chamador, a execução é recusada antes de iniciar.
+
+### 11.4 OIDC no lugar de chave estática
+
+O usuário IAM com chave de acesso foi removido. O runner apresenta um token de
+identidade assinado pelo GitHub e recebe credenciais temporárias.
+
+A política de confiança fixa o Environment do job e os identificadores numéricos
+do dono e do repositório — números não mudam com renomeação, o que impede que
+alguém registre um nome abandonado e herde a confiança. O claim real tem a forma
+`repo:<dono>@<id>/<repo>@<id>:environment:<ambiente>`; descobri-lo exigiu ler o
+evento `AssumeRoleWithWebIdentity` no CloudTrail.
+
+O ARN da role passou a ser variável, não segredo: sem a política de confiança
+correspondente, conhecê-lo não serve para nada.
+
+### 11.5 Observabilidade ampliada
+
+Acrescentados o `postgres_exporter` e três seções ao dashboard — infraestrutura,
+logs e banco de dados.
+
+Correção relevante: o `node_exporter` rodava sem acesso ao sistema de arquivos
+do host e media o próprio container; os únicos "discos" visíveis eram
+`/etc/hostname`, `/etc/hosts` e `/etc/resolv.conf`. Passou a montar a raiz em
+modo leitura. Métrica errada é pior que métrica ausente — ausente se percebe,
+errada se acredita.
+
+### 11.6 Estrutura do repositório, itens novos
+
+```
+ansible/
+  requirements.yml            # collections exigidas, fonte unica de versoes
+  inventory/prod.aws_ec2.yml  # inventario dinamico do ambiente de producao
+terraform/
+  ci.tf                       # permissoes do pipeline
+  oidc.tf                     # provedor OIDC e role por ambiente
+  envs/prod.tfvars
+.github/workflows/
+  deploy.yml                  # workflow reutilizavel: deploy, smoke test, rollback
+```
+
+### 11.7 O que permanece fora de escopo
+
+ASG/ALB/ECS, HTTPS via ACM, autenticação de usuários, Amazon Managed
+Prometheus/Grafana, ambiente `test` provisionado e scan de IaC (Checkov). As
+justificativas da seção 9 continuam valendo para esses itens.

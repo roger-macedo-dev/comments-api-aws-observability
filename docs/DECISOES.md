@@ -7,7 +7,9 @@ rastro de execução em [`docs/LOG_DE_ENGENHARIA.md`](LOG_DE_ENGENHARIA.md).
 ## Contexto do problema
 
 API REST de comentários (inserção e listagem por matéria), com infraestrutura e
-pipeline de deploy automatizados, em três ambientes (dev/test/prod), na AWS.
+pipeline de deploy automatizados, com ambientes isolados na AWS. O desafio previa
+três ambientes (dev/test/prod); estão provisionados `dev` e `prod`, e `test` segue
+descrito no design — o código é o mesmo, muda apenas o workspace.
 
 ## Decisões
 
@@ -25,8 +27,9 @@ pipeline de deploy automatizados, em três ambientes (dev/test/prod), na AWS.
 | 10 | State do Terraform: **S3 com lock nativo** (`use_lockfile`) | state local, lock via DynamoDB | Colaboração segura, lock contra execução concorrente sem depender de tabela separada; método atual recomendado pelo Terraform (DynamoDB lock foi depreciado) |
 | 11 | Coleta de logs: **Grafana Alloy** | Promtail | Promtail atingiu EOL em 03/2026 (sem mais suporte oficial); Alloy é o coletor atual recomendado pelo Grafana Labs |
 | 12 | Alertas preditivos: **predict_linear (Prometheus nativo)** | ML externo (Prophet/PyOD) | Extrapolação de tendência resolve o caso de uso sem infraestrutura adicional; ML dedicado seria overengineering pro escopo atual |
-| 12 | Verificação de deploy: **smoke test com rollback automático** | confiar no código de saída do `compose up` | Container que sobe e morre em seguida daria falso positivo; o rollback devolve a versão anterior sem intervenção manual |
-| 13 | Credencial do pipeline: **OIDC com role por ambiente** | chave de acesso estática nos secrets | O runner apresenta um token assinado pelo GitHub e recebe credenciais temporárias; não há segredo de longa duração em lugar nenhum. A política de confiança fixa os identificadores numéricos do dono e do repositório, imunes a renomeação, e o Environment do job — a role de dev não pode ser assumida por um job de prod |
+| 13 | Verificação de deploy: **smoke test com rollback automático** | confiar no código de saída do `compose up` | Container que sobe e morre em seguida daria falso positivo; o rollback devolve a versão anterior sem intervenção manual |
+| 14 | Credencial do pipeline: **OIDC com role por ambiente** | chave de acesso estática nos secrets | O runner apresenta um token assinado pelo GitHub e recebe credenciais temporárias; não há segredo de longa duração em lugar nenhum. A política de confiança fixa os identificadores numéricos do dono e do repositório, imunes a renomeação, e o Environment do job — a role de dev não pode ser assumida por um job de prod |
+| 15 | Observabilidade: **exporters de sistema e de banco** | apenas métricas da aplicação | Aplicação saudável não significa infraestrutura saudável: a API pode responder bem enquanto o banco acumula conexões ou perde eficiência de cache. O `node_exporter` monta o sistema de arquivos do host — sem isso mede o próprio container e reporta número errado, o que é pior que não medir |
 
 ## Caminho de evolução (fora do escopo desta entrega)
 
@@ -44,6 +47,6 @@ nginx em HTTP             →  ALB + ACM (TLS)
 |---|---|
 | Automação de infraestrutura (IaaS) | ✅ Terraform — provisionamento completo, validado end-to-end na AWS |
 | Automação de configuração (IaaC) | ✅ Ansible (`aws_ssm`) — validado end-to-end na AWS, zero SSH |
-| Pipeline de deploy | ✅ GitHub Actions — testes, segurança, build/push (GHCR) e deploy automático em dev via Ansible/aws_ssm, com smoke test end-to-end e rollback automático; gate manual de prod documentado como caminho de evolução |
+| Pipeline de deploy | ✅ GitHub Actions — testes, segurança, build/push (GHCR) e deploy automático em dev via Ansible/aws_ssm, com smoke test end-to-end e rollback automático; gate de aprovação humana em produção, implementado como regra de proteção do Environment e validado nos dois caminhos (aprovação e recusa) |
 | Monitoramento e métricas | ✅ Prometheus + Grafana + Loki + Alloy + Alertmanager, métricas RED da API, dashboard com painel de SLO |
 | Desenvolvimento da API | ✅ Node/Express + Postgres, testado (7 testes automatizados) |

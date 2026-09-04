@@ -764,3 +764,138 @@ reais, corrigidos na sequencia:
 
 Validado via API do proprio Prometheus (`/api/v1/rules`) apos o restart -- regra nova
 presente e avaliando normalmente.
+
+## Fase 9 — Ansible validado end-to-end (04/09/2026)
+
+O playbook existia desde a fase 5, mas contra uma infraestrutura recriada do
+zero apareceram três lacunas.
+
+Faltava um `requirements.yml` declarando as collections `amazon.aws` e
+`community.aws`. Sem ele, quem clona o repositório — inclusive o runner do
+pipeline — não consegue executar o playbook. Versões passaram a ser declaradas
+num lugar só, com limite superior em 8.0.0 por causa da versão do `ansible-core`.
+
+A transferência da imagem por SSM mostrou-se inviável: 49 MB levaram mais de
+quinze minutos, e a sessão morreu no meio quando a VM do control node travou por
+saturação de I/O. Confirmou a decisão de publicar no GHCR e deixar o host puxar
+a imagem.
+
+Resultado: 9 containers no ar, POST e GET respondendo pelo nginx, banco
+saudável. Segunda execução com `changed=0` nas tarefas de instalação — a
+idempotência funcionando.
+
+## Fase 10 — CI/CD validado e imagem por SHA (04/09/2026)
+
+Criado um usuário IAM dedicado ao pipeline, com permissão mínima: descobrir a
+instância, abrir sessão SSM, ler os segredos do próprio ambiente e usar o bucket
+de transferência.
+
+Problema encontrado: o `ci.yml` só disparava em mudanças dentro de `app/`. Um
+commit de infraestrutura não publicava imagem, e o CD falhava por não encontrar
+o artefato. Acrescentado `workflow_dispatch`.
+
+O ciclo completo foi exercitado: commit → CI (testes, `npm audit`, Trivy,
+publicação no GHCR) → CD → EC2 rodando a imagem com a tag igual ao SHA do
+commit, não `latest`.
+
+## Fase 11 — Smoke test e rollback (04/09/2026)
+
+O CD ficava verde ainda que a aplicação não subisse: `docker compose up`
+retornar zero significa apenas que os containers iniciaram.
+
+Acrescentada verificação de fora, pelo caminho do usuário — health check com
+confirmação de banco, criação de um comentário e leitura de volta —, com
+repetição enquanto a stack termina de subir.
+
+Falhando a verificação, a versão anterior é reimplantada e o job termina em
+erro. A imagem em produção é registrada no Parameter Store, fora do host, de
+modo a sobreviver à instância ser recriada.
+
+Três sutilezas custaram tempo e ficam registradas:
+
+- Sem `continue-on-error` no passo de deploy, uma imagem inexistente aborta o
+  job antes do rollback, deixando o ambiente no meio do caminho.
+- Um passo pulado tem `outcome` igual a `skipped`; comparar com `failure` dá
+  falso quando o deploy falha e o smoke test nem chega a rodar.
+- O job termina em erro mesmo com o rollback bem-sucedido. Pipeline verde deve
+  significar "a mudança está no ar".
+
+Validado com uma tag inexistente: deploy falhou, rollback devolveu a versão
+anterior, aplicação permaneceu no ar, job vermelho.
+
+## Fase 12 — Ambiente de produção e gate de aprovação (04/09/2026)
+
+Provisionado o workspace `prod`, com instância, role IAM, segredos e inventário
+próprios. O caminho do playbook foi parametrizado por ambiente: o prefixo do
+Parameter Store deixou de ser fixo em `/comments-api/dev/`, o que evitaria o pior
+erro possível — produção subindo com credenciais de desenvolvimento.
+
+O procedimento de deploy virou workflow reutilizável, chamado por dev e por
+prod. Duas cópias do mesmo procedimento divergem com o tempo.
+
+O gate de aprovação foi configurado como regra de proteção do Environment, não
+no YAML. Aprovação e recusa foram exercitadas: aprovando, o deploy conclui;
+recusando, a execução encerra sem tocar no ambiente.
+
+## Fase 13 — OIDC (04/09/2026)
+
+Removida a chave de acesso estática. O runner passa a apresentar um token de
+identidade assinado pelo GitHub e receber credenciais temporárias.
+
+Três erros no caminho, todos com mensagens que não indicam a causa:
+
+`startup_failure` sem nenhum job na lista — o workflow reutilizável pedia
+`id-token: write` e o chamador não concedia. O token de permissões é definido
+por quem chama; o reutilizável só restringe.
+
+`Not authorized to perform sts:AssumeRoleWithWebIdentity` — a condição do claim
+`sub` não batia. Um curinga amplo também falhou, o que descartou a hipótese de
+divergência no ambiente. O CloudTrail deu a resposta: o `sub` real é
+`repo:<dono>@<id>/<repo>@<id>:environment:<ambiente>`, com os identificadores
+numéricos do GitHub embutidos. São imunes a renomeação — amarrar a eles impede
+que alguém registre um nome abandonado e herde a confiança.
+
+Ao final, os usuários IAM e os secrets do repositório foram removidos: a chave
+de longa duração deixou de existir, não apenas de ser usada.
+
+## Fase 14 — Observabilidade ampliada e correções (04/09/2026)
+
+Acrescentado o `postgres_exporter` e três seções ao dashboard: infraestrutura,
+logs e banco de dados. Datasources ganharam `uid` fixo — sem isso o Grafana gera
+um valor aleatório a cada provisionamento e os painéis perdem a fonte.
+
+Ao validar painel por painel, apareceram quatro problemas reais:
+
+O `node_exporter` rodava sem acesso ao sistema de arquivos do host e media o
+próprio container: os únicos "discos" visíveis eram `/etc/hostname`,
+`/etc/hosts` e `/etc/resolv.conf`. Passou a montar a raiz em modo leitura.
+Métrica errada é pior que métrica ausente.
+
+O Grafana subiu com o diretório de provisionamento vazio, embora os arquivos
+existissem no host: o container fora criado antes, e o diretório do host foi
+recriado depois, deixando o bind mount preso ao inode antigo. `restart` não
+resolve — mount, imagem, `command` e variáveis de ambiente só entram na criação
+do container.
+
+A senha do Grafana não era aceita: `GF_SECURITY_ADMIN_PASSWORD` só vale quando o
+banco interno é criado. Volume sobrevivente mantém a senha antiga, sem erro
+visível.
+
+Sessenta requisições retornando 400 não eram defeito da API: o gerador de carga
+usava um e-mail sem domínio válido, e a validação recusou corretamente. O painel
+de erros permaneceu vazio porque 400 é erro de cliente, não de servidor.
+
+## Fase 15 — Revisão da documentação (04/09/2026)
+
+Com o repositório bem à frente do que os documentos descreviam, revisão completa.
+
+O README afirmava que produção implantava automaticamente a cada push, o que
+deixou de ser verdade com o gate — e contradizia a própria tabela de ambientes
+logo abaixo. Corrigido, junto com o diagrama e a seção de observabilidade.
+
+O `DECISOES.md` tinha duas decisões numeradas 12 e dava o gate de produção como
+evolução futura.
+
+O documento de design não foi reescrito. Ele é registro datado, e reescrever
+apagaria o histórico da decisão — que é o valor dele. As afirmações superadas
+foram marcadas, e o estado atual entrou como seção 11.

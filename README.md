@@ -12,7 +12,8 @@ a API permite inserção e listagem cronológica por conteúdo.
 ```
 GitHub ─┐
          │  CI: testes + segurança (npm audit, Trivy) + build/push (GHCR)
-         │  CD: deploy automático em dev via Ansible (aws_ssm)
+         │  CD: Ansible (aws_ssm) → smoke test → rollback automático se falhar
+         │      dev automático · prod com aprovação · autenticação por OIDC
          ▼
 AWS · VPC (subnet pública única)
   EC2 (Amazon Linux 2023, sem SSH — acesso via IAM/SSM Session Manager)
@@ -20,6 +21,7 @@ AWS · VPC (subnet pública única)
   ├── nginx (porta 80, único componente exposto)
   │     └── proxy → comments-api
   ├── comments-api (Node/Express) ── postgres (container, ou RDS via toggle)
+  │                                    └── postgres_exporter
   └── observabilidade
         prometheus ── alertmanager
         loki ── alloy
@@ -43,8 +45,8 @@ auditado por IAM.
 | Containerização | Docker (multi-stage, non-root) + Docker Compose |
 | Infraestrutura | Terraform (VPC, EC2, IAM, Security Group, SSM) |
 | Configuração | Ansible (`aws_ssm`, zero SSH) |
-| CI/CD | GitHub Actions (testes, segurança, build/push GHCR, deploy) |
-| Observabilidade | Prometheus, Grafana, Loki, Grafana Alloy, Alertmanager |
+| CI/CD | GitHub Actions (testes, segurança, build/push GHCR, deploy, OIDC) |
+| Observabilidade | Prometheus, Grafana, Loki, Grafana Alloy, Alertmanager, node/postgres exporter |
 | Testes | Jest + Supertest |
 
 ## API
@@ -93,9 +95,19 @@ npm test
 
 ## Observabilidade
 
-Dashboard próprio da API segue o método **RED** (Rate, Errors, Duration) mais um painel
-de disponibilidade/error budget. Datasources e dashboard são provisionados automaticamente
-via código (`observability/grafana/provisioning/`) — nenhuma configuração manual na UI.
+Datasources e dashboard são provisionados automaticamente via código
+(`observability/grafana/provisioning/`) — nenhuma configuração manual na interface.
+Destruir e recriar o ambiente devolve tudo, e mudança de painel passa por revisão de
+código como qualquer outra alteração.
+
+O dashboard cobre quatro camadas:
+
+| Seção | Conteúdo |
+|---|---|
+| Aplicação | método **RED** (Rate, Errors, Duration) e painel de SLO/error budget |
+| Infraestrutura | CPU, memória, disco, carga e rede da instância |
+| Logs | log da aplicação e filtro de erros em qualquer serviço, via Loki |
+| Banco de dados | conexões, transações, eficiência de cache, deadlocks, tamanho e volume de linhas |
 
 Alertas ativos: indisponibilidade de nodo (`NodeExporterDown`), memória alta
 (`MemoriaAlta`), API fora do ar (`APIDown`) e taxa de erro elevada (`TaxaErroAlta`,
@@ -133,8 +145,9 @@ cd ansible
 ansible-playbook -i inventory/dev.aws_ec2.yml site.yml
 ```
 
-Em produção esse mesmo playbook roda automaticamente via GitHub Actions (`cd.yml`) a
-cada push bem-sucedido na `main`, puxando a imagem recém-publicada no GHCR.
+Em desenvolvimento esse mesmo playbook roda automaticamente via GitHub Actions
+(`cd.yml`) a cada CI verde na `main`, puxando a imagem recém-publicada no GHCR. Em
+produção, o deploy é sempre explícito e depende de aprovação — ver a seguir.
 
 ### Ambientes
 
@@ -174,7 +187,7 @@ O deploy manual aceita uma tag específica, o que permite reimplantar qualquer v
 já publicada:
 
 ```bash
-gh workflow run cd.yml -f image_tag=<sha>
+gh workflow run cd.yml -f ambiente=dev -f image_tag=<sha>
 ```
 
 ## Documentação
