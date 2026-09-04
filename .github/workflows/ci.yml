@@ -10,6 +10,9 @@ on:
     branches: [main]
     paths:
       - 'app/**'
+  # Permite publicar a imagem sem alterar a aplicacao — necessario, por exemplo,
+  # ao validar o pipeline de deploy depois de mudancas so em infraestrutura.
+  workflow_dispatch:
 
 jobs:
   test:

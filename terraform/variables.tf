@@ -26,3 +26,15 @@ variable "use_rds" {
   type        = bool
   default     = false
 }
+
+variable "region" {
+  description = "Regiao AWS"
+  type        = string
+  default     = "us-east-2"
+}
+
+variable "ssm_bucket" {
+  description = "Bucket usado pelo plugin de conexao aws_ssm para transferir arquivos"
+  type        = string
+  default     = "comments-api-tfstate-428521271992"
+}
