@@ -1,20 +1,12 @@
-# Usuario IAM usado pelo pipeline de CD.
+# Permissoes exigidas pelo pipeline de CD.
 #
 # O runner do GitHub Actions atua como control node do Ansible: descobre a
 # instancia (inventario dinamico), abre sessao SSM no lugar de SSH, transfere
-# arquivos pelo bucket de apoio e le os segredos do Parameter Store para
-# renderizar o .env. As permissoes abaixo cobrem exatamente esses quatro papeis.
+# arquivos pelo bucket de apoio, le os segredos do Parameter Store para
+# renderizar o .env e registra a imagem implantada.
 #
-# Evolucao registrada no roadmap: trocar chave estatica por OIDC, eliminando
-# credencial de longa duracao nos secrets do repositorio.
-
-resource "aws_iam_user" "ci" {
-  name = "comments-api-${var.environment}-ci"
-}
-
-resource "aws_iam_access_key" "ci" {
-  user = aws_iam_user.ci.name
-}
+# A autenticacao e por OIDC (ver oidc.tf): estas permissoes sao anexadas a uma
+# role assumida com credenciais temporarias, nao a um usuario com chave fixa.
 
 data "aws_iam_policy_document" "ci" {
   # Inventario dinamico: descobre a instancia pela tag Name.
@@ -69,21 +61,4 @@ data "aws_iam_policy_document" "ci" {
     actions   = ["s3:ListBucket", "s3:GetBucketLocation"]
     resources = ["arn:aws:s3:::${var.ssm_bucket}"]
   }
-}
-
-resource "aws_iam_user_policy" "ci" {
-  name   = "cd-pipeline"
-  user   = aws_iam_user.ci.name
-  policy = data.aws_iam_policy_document.ci.json
-}
-
-output "ci_access_key_id" {
-  description = "Access key do usuario de CI — configurar como secret no GitHub"
-  value       = aws_iam_access_key.ci.id
-}
-
-output "ci_secret_access_key" {
-  description = "Secret key do usuario de CI — configurar como secret no GitHub"
-  value       = aws_iam_access_key.ci.secret
-  sensitive   = true
 }

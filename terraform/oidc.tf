@@ -43,8 +43,8 @@ data "aws_iam_policy_document" "confianca_github" {
       values   = ["sts.amazonaws.com"]
     }
 
-    # Restringe ao repositorio e ao Environment deste ambiente. O job de prod
-    # nao consegue assumir a role de dev, nem o contrario.
+    # Amarra ao repositorio e ao Environment: a role de dev nao pode ser
+    # assumida por um job de prod, nem o contrario.
     condition {
       test     = "StringEquals"
       variable = "${local.emissor_github}:sub"
