@@ -17,6 +17,13 @@ on:
         description: 'Tag da imagem (SHA do commit). Vazio = latest.'
         required: false
 
+# O token de permissoes e definido por quem chama: um workflow reutilizavel so
+# consegue restringir o que recebeu, nunca ampliar. Sem id-token aqui, a chamada
+# e recusada antes de iniciar.
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   # Define uma unica vez qual imagem sera implantada, para dev e prod
   # receberem exatamente o mesmo artefato.
