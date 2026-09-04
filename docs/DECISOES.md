@@ -30,6 +30,7 @@ descrito no design — o código é o mesmo, muda apenas o workspace.
 | 13 | Verificação de deploy: **smoke test com rollback automático** | confiar no código de saída do `compose up` | Container que sobe e morre em seguida daria falso positivo; o rollback devolve a versão anterior sem intervenção manual |
 | 14 | Credencial do pipeline: **OIDC com role por ambiente** | chave de acesso estática nos secrets | O runner apresenta um token assinado pelo GitHub e recebe credenciais temporárias; não há segredo de longa duração em lugar nenhum. A política de confiança fixa os identificadores numéricos do dono e do repositório, imunes a renomeação, e o Environment do job — a role de dev não pode ser assumida por um job de prod |
 | 15 | Observabilidade: **exporters de sistema e de banco** | apenas métricas da aplicação | Aplicação saudável não significa infraestrutura saudável: a API pode responder bem enquanto o banco acumula conexões ou perde eficiência de cache. O `node_exporter` monta o sistema de arquivos do host — sem isso mede o próprio container e reporta número errado, o que é pior que não medir |
+| 16 | Provedor OIDC no estado de `dev`, referenciado por `prod` | camada compartilhada com estado próprio | O provedor é único por conta AWS e não cabe em nenhum dos dois ambientes. Enquanto forem dois workspaces do mesmo código, uma flag controla quem o cria — ao custo de uma regra de operação: destruir `prod` antes de `dev`. A separação em camada compartilhada está registrada como evolução |
 
 ## Caminho de evolução (fora do escopo desta entrega)
 
@@ -39,6 +40,8 @@ Documentado e defendido, não construído — decisão consciente de escopo:
 1 EC2 + Docker Compose   →  Auto Scaling Group + ALB  →  ECS Fargate
 Postgres em container    →  RDS Multi-AZ (toggle já implementado no código)
 nginx em HTTP             →  ALB + ACM (TLS)
+Recursos de conta no      →  camada compartilhada com estado próprio
+estado de dev                (provedor OIDC, bucket de state)
 ```
 
 ## Requisitos avaliados × status da entrega

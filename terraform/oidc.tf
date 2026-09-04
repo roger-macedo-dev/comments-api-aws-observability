@@ -17,6 +17,22 @@ locals {
 
 # O provedor OIDC e unico por conta AWS, nao por ambiente. Criado apenas no
 # workspace que tiver a flag ligada; os demais apenas o referenciam pelo ARN.
+#
+# ATENCAO — acoplamento entre workspaces:
+# o provedor pertence ao estado de "dev" (criar_provedor_oidc = true), mas a role
+# de "prod" depende dele. Consequencias praticas:
+#
+#   * destruir "dev" remove o provedor e quebra a autenticacao de "prod", mesmo
+#     que prod continue de pe. O sintoma e um AccessDenied em
+#     sts:AssumeRoleWithWebIdentity, que nao menciona o provedor em momento algum.
+#   * a ordem segura para derrubar tudo e: prod primeiro, dev depois.
+#   * para manter apenas prod no ar, ligue criar_provedor_oidc no tfvars de prod
+#     e desligue no de dev antes de destruir dev.
+#
+# A solucao definitiva e tirar o provedor daqui: recursos de conta (provedor
+# OIDC, bucket de state, zona DNS) pertencem a uma camada compartilhada, com
+# estado proprio, e nao ao estado de um ambiente. Enquanto forem dois workspaces
+# do mesmo codigo, a flag resolve com uma regra de operacao explicita.
 resource "aws_iam_openid_connect_provider" "github" {
   count = var.criar_provedor_oidc ? 1 : 0
 

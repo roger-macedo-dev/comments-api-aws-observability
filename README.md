@@ -190,6 +190,35 @@ já publicada:
 gh workflow run cd.yml -f ambiente=dev -f image_tag=<sha>
 ```
 
+### Ordem de destruição
+
+Destrua **produção antes de desenvolvimento**:
+
+| passo | comando |
+|---|---|
+| 1 | `terraform workspace select prod && terraform destroy -var-file=envs/prod.tfvars` |
+| 2 | `terraform workspace select dev && terraform destroy -var-file=envs/dev.tfvars` |
+
+O provedor OIDC é único por conta AWS e pertence ao estado de `dev`; a role de
+`prod` depende dele. Destruir `dev` primeiro deixa produção de pé mas sem
+conseguir autenticar o pipeline — e o erro (`AccessDenied` em
+`sts:AssumeRoleWithWebIdentity`) não menciona o provedor.
+
+Para manter apenas produção no ar, ligue `criar_provedor_oidc` no tfvars de
+`prod` e desligue no de `dev` antes de destruir `dev`.
+
+Depois de destruir, confira que nada ficou cobrando — apagar a instância nem
+sempre apaga os volumes:
+
+```bash
+aws ec2 describe-instances --region us-east-2 \
+  --filters "Name=instance-state-name,Values=running" \
+  --query "Reservations[].Instances[].InstanceId" --output text
+
+aws ec2 describe-volumes --region us-east-2 \
+  --query "Volumes[].[VolumeId,State,Size]" --output text
+```
+
 ## Documentação
 
 - [Decisões de arquitetura](docs/DECISOES.md) — resumo executivo das escolhas técnicas
