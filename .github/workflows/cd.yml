@@ -6,6 +6,10 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Tag da imagem a implantar (SHA do commit). Vazio = latest.'
+        required: false
 
 jobs:
   deploy-dev:
@@ -39,7 +43,8 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
             TAG="${{ github.event.workflow_run.head_sha }}"
           else
-            TAG="latest"
+            TAG="${{ inputs.image_tag }}"
+            TAG="${TAG:-latest}"
           fi
           echo "nova=ghcr.io/${{ github.repository_owner }}/comments-api:${TAG}" >> "$GITHUB_OUTPUT"
           # Imagem hoje em producao, registrada pelo deploy anterior. Ausente no
