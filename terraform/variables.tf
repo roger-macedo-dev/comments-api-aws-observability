@@ -38,3 +38,15 @@ variable "ssm_bucket" {
   type        = string
   default     = "comments-api-tfstate-428521271992"
 }
+
+variable "repositorio_github" {
+  description = "Repositorio autorizado a assumir a role via OIDC (dono/nome)"
+  type        = string
+  default     = "roger-macedo-dev/comments-api-aws-observability"
+}
+
+variable "criar_provedor_oidc" {
+  description = "O provedor OIDC e unico por conta AWS; criar em apenas um workspace"
+  type        = bool
+  default     = false
+}

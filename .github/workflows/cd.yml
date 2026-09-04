@@ -42,9 +42,6 @@ jobs:
     with:
       ambiente: dev
       image_tag: ${{ needs.imagem.outputs.tag }}
-    secrets:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
   # Producao nunca e automatica: exige disparo explicito e aprovacao humana,
   # configurada como regra de protecao do Environment.
@@ -55,6 +52,3 @@ jobs:
     with:
       ambiente: prod
       image_tag: ${{ needs.imagem.outputs.tag }}
-    secrets:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}

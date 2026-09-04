@@ -15,11 +15,6 @@ on:
         description: 'Tag da imagem a implantar'
         required: true
         type: string
-    secrets:
-      AWS_ACCESS_KEY_ID:
-        required: true
-      AWS_SECRET_ACCESS_KEY:
-        required: true
 
 jobs:
   deploy:
@@ -27,12 +22,24 @@ jobs:
     # O gate de aprovacao vive na configuracao do repositorio (regra de
     # protecao do Environment), nao aqui — YAML qualquer um edita num PR.
     environment: ${{ inputs.ambiente }}
+    # id-token: write autoriza o job a pedir ao GitHub o token de identidade
+    # apresentado a AWS. Sem esta permissao a acao falha com "Credentials could
+    # not be loaded", sem mencionar OIDC em momento algum.
+    permissions:
+      id-token: write
+      contents: read
     env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: us-east-2
     steps:
       - uses: actions/checkout@v7
+
+      # Credenciais temporarias, validas por minutos. Nenhum segredo de longa
+      # duracao guardado no repositorio.
+      - name: Autentica na AWS via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-2
 
       - uses: actions/setup-python@v7
         with:
