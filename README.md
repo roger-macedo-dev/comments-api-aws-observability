@@ -136,6 +136,28 @@ ansible-playbook -i inventory/dev.aws_ec2.yml site.yml
 Em produção esse mesmo playbook roda automaticamente via GitHub Actions (`cd.yml`) a
 cada push bem-sucedido na `main`, puxando a imagem recém-publicada no GHCR.
 
+### Ambientes
+
+Dev e prod usam o mesmo workflow reutilizável de deploy — uma cópia só, para que
+produção não divirja do caminho já exercitado em dev. O que muda é a configuração:
+
+| | dev | prod |
+|---|---|---|
+| Disparo | automático, a cada CI verde na `main` | manual, com ambiente escolhido |
+| Aprovação | não exige | revisor obrigatório no Environment |
+| Credencial do pipeline | usuário IAM restrito a `dev` | usuário IAM restrito a `prod` |
+| Segredos | `/comments-api/dev/*` | `/comments-api/prod/*` |
+
+O gate não está no YAML — está na regra de proteção do Environment, na configuração
+do repositório. YAML qualquer um altera num pull request; a regra de proteção, não.
+
+```bash
+gh workflow run cd.yml -f ambiente=prod -f image_tag=<sha>
+```
+
+O job fica pendente até alguém aprovar. Em um time, a configuração adequada é
+`prevent_self_review`: quem dispara o deploy não deveria ser quem aprova.
+
 ### Verificação e rollback
 
 Depois de implantar, o pipeline exercita o caminho completo — nginx, aplicação e
@@ -171,5 +193,5 @@ gh workflow run cd.yml -f image_tag=<sha>
 - [x] Pipeline de CI (build, testes, segurança, publicação da imagem)
 - [x] Deploy automático em dev via CI/CD (Ansible/aws_ssm, pull do GHCR)
 - [x] Smoke test end-to-end com rollback automático para a versão anterior
-- [ ] Gate manual de aprovação para produção
+- [x] Gate manual de aprovação para produção (Environment com revisor obrigatório)
 - [ ] OIDC no lugar de chave de acesso estática no pipeline

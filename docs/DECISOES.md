@@ -18,7 +18,7 @@ pipeline de deploy automatizados, em três ambientes (dev/test/prod), na AWS.
 | 3 | API: **Node/Express + Postgres** | Flask, Go | Stack web moderna, ecossistema maduro de testes e observabilidade |
 | 4 | Ambientes: **Terraform workspaces sob demanda** | 3 instâncias fixas 24/7 | Isolamento real de IaC multi-ambiente sem custo de infraestrutura ociosa |
 | 5 | CI/CD: **GitHub Actions + GHCR** | GitLab CI self-hosted | Integração nativa com o repositório do projeto |
-| 6 | Deploy: **automático em dev, gate manual em prod** | automático em ambos | Segurança operacional — falha de deploy não derruba produção sem revisão |
+| 6 | Deploy: **automático em dev, gate manual em prod** | automático em ambos | Segurança operacional — falha de deploy não derruba produção sem revisão. Implementado como regra de proteção do Environment, fora do YAML: o job aguarda aprovação humana e cada ambiente usa credencial e segredos próprios |
 | 7 | Acesso ao host: **SSM Session Manager** | SSH + chave + porta 22 | Elimina porta exposta; acesso auditado via IAM, sem gestão de chaves distribuídas |
 | 8 | Secrets: **SSM Parameter Store** | `.env` no host / segredos no Git | Segredos nunca residem no host nem no controle de versão; least privilege via IAM |
 | 9 | Banco em prod: **toggle RDS** (`use_rds`) | sempre container / sempre RDS | Ambientes de baixo custo usam container; produção usa serviço gerenciado (backup, Multi-AZ) via flag de configuração — 12-factor |
