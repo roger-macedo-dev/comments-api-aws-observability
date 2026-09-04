@@ -25,6 +25,8 @@ pipeline de deploy automatizados, em três ambientes (dev/test/prod), na AWS.
 | 10 | State do Terraform: **S3 com lock nativo** (`use_lockfile`) | state local, lock via DynamoDB | Colaboração segura, lock contra execução concorrente sem depender de tabela separada; método atual recomendado pelo Terraform (DynamoDB lock foi depreciado) |
 | 11 | Coleta de logs: **Grafana Alloy** | Promtail | Promtail atingiu EOL em 03/2026 (sem mais suporte oficial); Alloy é o coletor atual recomendado pelo Grafana Labs |
 | 12 | Alertas preditivos: **predict_linear (Prometheus nativo)** | ML externo (Prophet/PyOD) | Extrapolação de tendência resolve o caso de uso sem infraestrutura adicional; ML dedicado seria overengineering pro escopo atual |
+| 12 | Verificação de deploy: **smoke test com rollback automático** | confiar no código de saída do `compose up` | Container que sobe e morre em seguida daria falso positivo; o rollback devolve a versão anterior sem intervenção manual |
+| 13 | Credencial do pipeline: **usuário IAM dedicado, permissão mínima** | chave da conta principal | O runner só descobre a instância, abre sessão SSM, lê os segredos do próprio ambiente e usa o bucket de transferência. Evolução registrada: OIDC, eliminando a chave de longa duração |
 
 ## Caminho de evolução (fora do escopo desta entrega)
 
@@ -42,6 +44,6 @@ nginx em HTTP             →  ALB + ACM (TLS)
 |---|---|
 | Automação de infraestrutura (IaaS) | ✅ Terraform — provisionamento completo, validado end-to-end na AWS |
 | Automação de configuração (IaaC) | ✅ Ansible (`aws_ssm`) — validado end-to-end na AWS, zero SSH |
-| Pipeline de deploy | ✅ GitHub Actions — testes, segurança, build/push (GHCR) e deploy automático em dev via Ansible/aws_ssm; gate manual de prod documentado como caminho de evolução |
+| Pipeline de deploy | ✅ GitHub Actions — testes, segurança, build/push (GHCR) e deploy automático em dev via Ansible/aws_ssm, com smoke test end-to-end e rollback automático; gate manual de prod documentado como caminho de evolução |
 | Monitoramento e métricas | ✅ Prometheus + Grafana + Loki + Alloy + Alertmanager, métricas RED da API, dashboard com painel de SLO |
 | Desenvolvimento da API | ✅ Node/Express + Postgres, testado (7 testes automatizados) |

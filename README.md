@@ -136,6 +136,25 @@ ansible-playbook -i inventory/dev.aws_ec2.yml site.yml
 Em produção esse mesmo playbook roda automaticamente via GitHub Actions (`cd.yml`) a
 cada push bem-sucedido na `main`, puxando a imagem recém-publicada no GHCR.
 
+### Verificação e rollback
+
+Depois de implantar, o pipeline exercita o caminho completo — nginx, aplicação e
+banco — antes de considerar o deploy bem-sucedido. `docker compose up` retornar zero
+não significa que a aplicação subiu: container que inicia e morre em seguida passaria
+como sucesso.
+
+Se a verificação falhar, ou se o próprio deploy falhar, a versão anterior é
+reimplantada automaticamente e o job termina em erro — deploy revertido não é deploy
+bem-sucedido. A imagem em produção fica registrada no Parameter Store, fora do host,
+de modo que a informação sobrevive à instância ser recriada.
+
+O deploy manual aceita uma tag específica, o que permite reimplantar qualquer versão
+já publicada:
+
+```bash
+gh workflow run cd.yml -f image_tag=<sha>
+```
+
 ## Documentação
 
 - [Decisões de arquitetura](docs/DECISOES.md) — resumo executivo das escolhas técnicas
@@ -151,3 +170,6 @@ cada push bem-sucedido na `main`, puxando a imagem recém-publicada no GHCR.
 - [x] Configuração automatizada do host via Ansible (aws_ssm, zero SSH)
 - [x] Pipeline de CI (build, testes, segurança, publicação da imagem)
 - [x] Deploy automático em dev via CI/CD (Ansible/aws_ssm, pull do GHCR)
+- [x] Smoke test end-to-end com rollback automático para a versão anterior
+- [ ] Gate manual de aprovação para produção
+- [ ] OIDC no lugar de chave de acesso estática no pipeline
