@@ -1,0 +1,55 @@
+site_name: Comments API — AWS + Observability
+site_description: Infraestrutura, configuração, entrega e observabilidade automatizadas
+site_url: https://roger-macedo-dev.github.io/comments-api-aws-observability/
+repo_url: https://github.com/roger-macedo-dev/comments-api-aws-observability
+repo_name: roger-macedo-dev/comments-api-aws-observability
+edit_uri: edit/main/
+
+# O site e gerado dos mesmos arquivos versionados no repositorio. Nao existe
+# conteudo que so viva aqui: qualquer texto novo entra como .md no git, e o
+# site passa a exibi-lo. Fonte unica, sem divergencia possivel.
+docs_dir: docs
+
+theme:
+  name: material
+  language: pt-BR
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      toggle:
+        icon: material/weather-night
+        name: Tema escuro
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Tema claro
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - content.code.copy
+    - search.highlight
+
+nav:
+  - Início: index.md
+  - Decisões de arquitetura: DECISOES.md
+  - Design detalhado: 2026-08-12-comments-api-design.md
+  - Log de engenharia: LOG_DE_ENGENHARIA.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.details
+
+plugins:
+  - search:
+      lang: pt

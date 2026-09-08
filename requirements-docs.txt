@@ -1,0 +1,2 @@
+# Dependencias para construir o site de documentacao.
+mkdocs-material>=9.5

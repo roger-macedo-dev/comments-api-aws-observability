@@ -1,0 +1,66 @@
+name: Docs
+
+# Publica a documentacao do repositorio como site navegavel. O conteudo vem dos
+# mesmos arquivos versionados: nao existe texto que so viva no site, entao nao
+# ha segunda fonte para divergir do codigo.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'README.md'
+      - 'mkdocs.yml'
+      - 'requirements-docs.txt'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+# O deploy para o Pages usa OIDC, mesmo mecanismo do deploy na AWS: token de
+# curta duracao, sem segredo guardado.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Uma publicacao por vez; execucoes em andamento nao sao canceladas para nao
+# deixar o site num estado parcial.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-docs.txt
+
+      - run: pip install -r requirements-docs.txt
+
+      - name: Gera a pagina inicial a partir do README
+        run: ./scripts/gerar-index.sh
+
+      # --strict transforma aviso em erro: link quebrado reprova a construcao,
+      # em vez de publicar um site com link morto.
+      - run: mkdocs build --strict
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
