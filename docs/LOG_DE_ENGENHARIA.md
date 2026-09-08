@@ -899,3 +899,53 @@ evolução futura.
 O documento de design não foi reescrito. Ele é registro datado, e reescrever
 apagaria o histórico da decisão — que é o valor dele. As afirmações superadas
 foram marcadas, e o estado atual entrou como seção 11.
+
+## Fase 16 — Revisão de segurança da imagem (04/09/2026)
+
+Revisão provocada por um relatório externo. Três dos quatro apontamentos se
+confirmaram; um estava incorreto, e a correção dele rendeu o achado mais
+relevante do dia.
+
+**O `qs`.** Dois avisos moderados, dependência direta do Express 5.2.1. Como o
+Express usa o `qs` para montar `req.query` em toda requisição, o código afetado
+era alcançável mesmo sem a aplicação ler query string — não é caso de
+"explorabilidade não confirmada". Corrigido com `npm audit fix`, dentro do mesmo
+major.
+
+Ficou claro por que passou despercebido: a CI rodava `npm audit
+--audit-level=high`, e avisos moderados não reprovavam o build. Ajustado para
+`moderate`.
+
+**Node 20.** Fora de suporte. Medido em vez de suposto: `node:lts-alpine` estava
+em v24.20.0. Migrado para 24, validado pela suíte.
+
+**O Trivy.** O relatório afirmava que a ferramenta não existia no projeto. Ela
+existia — escaneando o **filesystem** do diretório `app`, não a imagem
+construída. Não era ausência de ferramenta, era escopo errado, o que é um
+problema diferente e mais sutil.
+
+Acrescentada varredura da imagem antes da publicação, com `ignore-unfixed`:
+reprova apenas quando existe correção disponível. Pipeline que trava sem saída
+possível ensina o time a desligá-lo.
+
+**O que a varredura de imagem encontrou.** Seis vulnerabilidades altas, nenhuma
+no código do projeto:
+
+- `libcrypto3` e `libssl3` — OpenSSL desatualizado no Alpine da base.
+- `brace-expansion`, `ip-address` e `tar` — dependências do **npm empacotado
+  junto com o Node**.
+
+A segunda origem é a mais interessante. A imagem final executa
+`node src/server.js`; o npm serve ao estágio de build. Removê-lo do runtime
+eliminou as três de uma vez — mesmo princípio aplicado no projeto irmão ao
+remover `pip` e `setuptools`.
+
+Detalhe de sistema de arquivos em camadas: o `rm` aparece como 0 B no
+`docker history`, porque não recupera espaço — apenas oculta os arquivos na
+visão final. O ganho é de superfície de ataque e de relatório, não de tamanho.
+
+Resultado: 0 HIGH/CRITICAL, contra 6.
+
+**A recomendação recusada.** Migrar para base endurecida de terceiro foi
+avaliada e adiada: depois das correções, resolveria zero achados, ao custo de
+adaptar healthcheck e criação de usuário. Registrada como decisão 20.
