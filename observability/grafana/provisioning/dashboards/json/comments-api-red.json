@@ -46,7 +46,7 @@
       },
       "targets": [
         {
-          "expr": "100 * sum(rate(http_requests_total{job=\"comments-api\", status_code=~\"5..\"}[5m])) / sum(rate(http_requests_total{job=\"comments-api\"}[5m]))",
+          "expr": "100 * (sum(rate(http_requests_total{job=\"comments-api\", status_code=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(http_requests_total{job=\"comments-api\"}[5m])), 0.0001)",
           "legendFormat": "erro %",
           "datasource": {
             "type": "prometheus",
@@ -57,7 +57,8 @@
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
-      }
+      },
+      "description": "Zero explícito quando não há erro. Sem 'or vector(0)', a série de 5xx não existe enquanto nada falha, e o painel ficaria vazio — indistinguível de coleta quebrada."
     },
     {
       "id": 3,
