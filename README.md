@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/roger-macedo-dev/comments-api-aws-observability/actions/workflows/ci.yml/badge.svg)](https://github.com/roger-macedo-dev/comments-api-aws-observability/actions/workflows/ci.yml)
 [![CD](https://github.com/roger-macedo-dev/comments-api-aws-observability/actions/workflows/cd.yml/badge.svg)](https://github.com/roger-macedo-dev/comments-api-aws-observability/actions/workflows/cd.yml)
+[![Docs](https://github.com/roger-macedo-dev/comments-api-aws-observability/actions/workflows/docs.yml/badge.svg)](https://roger-macedo-dev.github.io/comments-api-aws-observability/)
 
 API REST de comentários com infraestrutura como código, containerização e stack de
 observabilidade completa. Comentários são associados a um `content_id` (matéria/conteúdo);
@@ -250,6 +251,12 @@ A imagem final não carrega npm, npx, corepack nem yarn: a aplicação executa
 build **verifica** essa ausência e falha se ela deixar de valer.
 
 ## Documentação
+
+Também publicada como site navegável, com busca:
+**[roger-macedo-dev.github.io/comments-api-aws-observability](https://roger-macedo-dev.github.io/comments-api-aws-observability/)**
+
+O site é gerado destes mesmos arquivos a cada push — não existe conteúdo que
+viva apenas lá, então não há segunda fonte para divergir do código.
 
 - [Decisões de arquitetura](docs/DECISOES.md) — resumo executivo das escolhas técnicas
 - [Design detalhado](docs/2026-08-12-comments-api-design.md) — arquitetura completa e alternativas avaliadas
