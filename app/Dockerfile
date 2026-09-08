@@ -1,12 +1,12 @@
 # Stage 1: build — instala dependências
-FROM node:20-alpine AS build
+FROM node:24-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY src/ ./src/
 
 # Stage 2: runtime — imagem final, só o necessário
-FROM node:20-alpine
+FROM node:24-alpine
 WORKDIR /app
 
 RUN addgroup -S app && adduser -S app -G app
