@@ -425,10 +425,11 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "{job=\"docker\"} |~ \"(?i)error|erro|fatal|panic\"",
+          "expr": "{job=\"docker\", container!~\".*(loki|alloy|grafana|prometheus)-.*\"} |~ \"(?i)error|erro|fatal|panic\"",
           "refId": "A"
         }
-      ]
+      ],
+      "description": "Exclui os proprios componentes de observabilidade: o Loki registra as consultas recebidas, e uma busca por 'error' encontra a si mesma no log dele."
     },
     {
       "type": "row",
