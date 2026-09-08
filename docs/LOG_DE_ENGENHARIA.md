@@ -944,7 +944,23 @@ Detalhe de sistema de arquivos em camadas: o `rm` aparece como 0 B no
 `docker history`, porque não recupera espaço — apenas oculta os arquivos na
 visão final. O ganho é de superfície de ataque e de relatório, não de tamanho.
 
-Resultado: 0 HIGH/CRITICAL, contra 6.
+Resultado: 0 HIGH/CRITICAL, contra 6. Imagem final em 61 MB.
+
+**Nota sobre medicao de tamanho.** `docker images` reportou 255 MB e
+`docker image inspect` reportou 61 MB. O primeiro soma o manifesto
+multiplataforma gerado pelo buildx, incluindo atestados; o segundo e o tamanho
+real da imagem para a plataforma. Ao citar tamanho de imagem, vale dizer qual
+medicao foi usada.
+
+**Endurecimento complementar.** A remocao do ferramental dependia da estrutura
+interna da imagem oficial — uma mudanca de layout a tornaria inocua sem aviso.
+Acrescentada verificacao no proprio build: se npm, npx, corepack ou yarn
+voltarem a existir no runtime, a construcao falha.
+
+O healthcheck passou para forma exec, sem depender de shell, e ganhou
+`--start-period`. Sem ele, as primeiras verificacoes rodam antes de a aplicacao
+terminar de subir e contam como falha. Validado com container real: `healthy`,
+`ExitCode 0`.
 
 **A recomendação recusada.** Migrar para base endurecida de terceiro foi
 avaliada e adiada: depois das correções, resolveria zero achados, ao custo de
