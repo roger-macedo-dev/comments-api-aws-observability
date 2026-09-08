@@ -11,7 +11,8 @@ a API permite inserção e listagem cronológica por conteúdo.
 
 ```
 GitHub ─┐
-         │  CI: testes + segurança (npm audit, Trivy) + build/push (GHCR)
+         │  CI: testes + segurança (npm audit, Trivy no código e na imagem)
+         │      + build/push (GHCR)
          │  CD: Ansible (aws_ssm) → smoke test → rollback automático se falhar
          │      dev automático · prod com aprovação · autenticação por OIDC
          ▼
@@ -227,6 +228,26 @@ aws ec2 describe-instances --region us-east-2 \
 aws ec2 describe-volumes --region us-east-2 \
   --query "Volumes[].[VolumeId,State,Size]" --output text
 ```
+
+### Segurança do pipeline
+
+A verificação acontece em três pontos, e cada um cobre o que os outros não veem:
+
+| ponto | cobre |
+|---|---|
+| `npm audit --audit-level=moderate --omit=dev` | dependências de produção declaradas |
+| Trivy no filesystem | código e dependências do diretório da aplicação |
+| Trivy na **imagem**, antes da publicação | tudo acima, mais o sistema operacional da base e o ferramental que vem com ela |
+
+O terceiro é o que impede uma imagem com vulnerabilidade alta corrigível de
+chegar ao registry — e foi acrescentado depois de uma revisão constatar que a
+varredura existente olhava o diretório, não o artefato entregue. Na estreia,
+reprovou o build com seis vulnerabilidades altas, nenhuma delas no código do
+projeto.
+
+A imagem final não carrega npm, npx, corepack nem yarn: a aplicação executa
+`node src/server.js`, e o ferramental serve apenas ao estágio de construção. O
+build **verifica** essa ausência e falha se ela deixar de valer.
 
 ## Documentação
 
