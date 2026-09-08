@@ -26,6 +26,17 @@ RUN rm -rf /usr/local/lib/node_modules/npm \
            /usr/local/bin/yarn \
            /usr/local/bin/yarnpkg
 
+# Falha o build se o ferramental voltar a existir. Os caminhos removidos acima
+# dependem da estrutura interna da imagem oficial; se uma versao futura mudar o
+# layout, a remocao passaria a nao ter efeito em silencio. Esta verificacao
+# transforma essa suposicao em erro visivel.
+RUN for ferramenta in npm npx corepack yarn; do \
+      if command -v "$ferramenta" > /dev/null 2>&1; then \
+        echo "ERRO: $ferramenta continua presente no runtime" >&2; \
+        exit 1; \
+      fi; \
+    done
+
 RUN addgroup -S app && adduser -S app -G app
 
 COPY --from=build --chown=app:app /app/node_modules ./node_modules
@@ -36,7 +47,7 @@ USER app
 ENV NODE_ENV=production
 EXPOSE 5000
 
-HEALTHCHECK --interval=15s --timeout=3s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:5000/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+HEALTHCHECK --interval=15s --timeout=3s --retries=3 --start-period=10s \
+  CMD ["node", "-e", "require('http').get('http://localhost:5000/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
 
 CMD ["node", "src/server.js"]
