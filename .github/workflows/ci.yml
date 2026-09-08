@@ -89,7 +89,7 @@ jobs:
       # ve apenas as dependencias declaradas; a da imagem ve tambem os pacotes
       # do sistema operacional da base, que sao a maior fonte de CVE numa
       # imagem desatualizada.
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: app
           push: false
@@ -105,7 +105,7 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
 
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: app
           push: true
