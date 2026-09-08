@@ -9,6 +9,23 @@ COPY src/ ./src/
 FROM node:24-alpine
 WORKDIR /app
 
+# Atualiza os pacotes do sistema. A imagem base e reconstruida em cadencia
+# propria, e ate la carrega correcoes ja publicadas no Alpine — hoje, OpenSSL.
+RUN apk --no-cache upgrade
+
+# Remove o npm da imagem final. A aplicacao executa "node src/server.js": o npm
+# so e necessario no estagio de build, para instalar dependencias. Mante-lo aqui
+# nao acrescenta nada e arrasta as vulnerabilidades das dependencias do proprio
+# npm (brace-expansion, ip-address, tar) para dentro do runtime.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/corepack \
+           /usr/local/bin/npm \
+           /usr/local/bin/npx \
+           /opt/yarn-* \
+           /usr/local/bin/yarn \
+           /usr/local/bin/yarnpkg
+
 RUN addgroup -S app && adduser -S app -G app
 
 COPY --from=build --chown=app:app /app/node_modules ./node_modules
