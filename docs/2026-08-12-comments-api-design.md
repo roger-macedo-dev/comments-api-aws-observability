@@ -197,7 +197,9 @@ script idempotente (`CREATE TABLE IF NOT EXISTS`).
 
 - **ci.yml:** roda em todo push/PR que toque `app/` — job `test` (Postgres de serviço,
   migration, `jest`), job `security` (`npm audit` + Trivy scan de filesystem), job
-  `build-and-push` (build multi-stage e push pro GHCR com tag `<sha>` e `latest`, só em
+  `build-and-push` **[parcialmente superado — o job de build passou a escanear
+  também a imagem construída antes de publicar, e o limiar do `npm audit` desceu
+  para moderado; ver §11.8]** (build multi-stage e push pro GHCR com tag `<sha>` e `latest`, só em
   push na `main`, dependente dos dois jobs anteriores).
 - **cd.yml:** disparado automaticamente via `workflow_run` quando o CI termina com sucesso
   na `main` (ou manualmente via `workflow_dispatch`). Roda o playbook Ansible do próprio
@@ -344,6 +346,34 @@ terraform/
 .github/workflows/
   deploy.yml                  # workflow reutilizavel: deploy, smoke test, rollback
 ```
+
+### 11.8 Revisão de segurança da imagem
+
+**Data:** 2026-09-04
+
+A varredura descrita em 5.5 cobria apenas o filesystem do diretório da
+aplicação. Isso deixava sem verificação o sistema operacional da imagem base e o
+ferramental que vem com ela — que era, na prática, a origem de todas as
+vulnerabilidades presentes.
+
+Acrescentada varredura da **imagem construída**, entre a construção e a
+publicação, com `ignore-unfixed` para reprovar apenas o que tem correção
+disponível. Na primeira execução reprovou o build com seis vulnerabilidades
+altas.
+
+Correções decorrentes: `qs` atualizado (dependência direta do Express),
+migração de Node 20, fora de suporte, para 24 LTS, `apk upgrade` na imagem final
+e remoção de npm, npx, corepack e yarn do runtime — a aplicação executa
+`node src/server.js`, e o ferramental só serve ao estágio de build.
+
+O limiar do `npm audit` desceu de `high` para `moderate`: os avisos do `qs` eram
+moderados e não reprovavam o build.
+
+Endurecimento complementar: o build passou a **verificar** que o ferramental
+continua ausente, em vez de supor que os caminhos removidos permanecem os
+mesmos; e o healthcheck passou para forma exec, com `--start-period`.
+
+Resultado: 0 vulnerabilidades altas ou críticas, contra 6.
 
 ### 11.7 O que permanece fora de escopo
 

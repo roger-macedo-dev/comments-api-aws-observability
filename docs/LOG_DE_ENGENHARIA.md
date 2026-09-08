@@ -965,3 +965,20 @@ terminar de subir e contam como falha. Validado com container real: `healthy`,
 **A recomendação recusada.** Migrar para base endurecida de terceiro foi
 avaliada e adiada: depois das correções, resolveria zero achados, ao custo de
 adaptar healthcheck e criação de usuário. Registrada como decisão 20.
+
+### Limitacao conhecida: CD sem infraestrutura
+
+Com os ambientes destruidos, todo push que passa na CI dispara um CD que falha
+ao autenticar. O erro e `The web identity token provided could not be
+validated`, distinto do `AccessDenied` visto antes: aquele indicava condicao de
+confianca divergente; este indica que o proprio provedor OIDC nao existe mais na
+conta — ele foi destruido junto com o workspace `dev`, conforme o acoplamento
+documentado na decisao 16.
+
+Nao invalida as correcoes de seguranca nem a imagem publicada: a CI conclui e o
+artefato vai para o GHCR. O que nao ocorre e o deploy, por ausencia de ambiente.
+
+Fica registrado como limitacao conhecida desta rodada. A correcao prevista e
+fazer o pipeline distinguir "ambiente ausente" de "deploy quebrado", encerrando
+sem erro apenas quando a instancia comprovadamente nao existe — nunca como
+tratamento generico de falha.
